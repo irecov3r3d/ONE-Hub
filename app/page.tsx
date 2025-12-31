@@ -13,6 +13,7 @@ import {
   Image as ImageIcon,
   Library,
   Bot,
+  Workflow,
 } from 'lucide-react';
 import SongGenerator from '@/components/SongGenerator';
 import SongLibrary from '@/components/SongLibrary';
@@ -23,6 +24,7 @@ import StemSeparator from '@/components/StemSeparator';
 import AlbumArtGenerator from '@/components/AlbumArtGenerator';
 import ExportPanel from '@/components/ExportPanel';
 import WorkflowAutomation from '@/components/WorkflowAutomation';
+import VisualWorkflowBuilder from '@/components/workflow-builder/VisualWorkflowBuilder';
 import type { UploadedFile } from '@/types';
 
 export interface Song {
@@ -45,7 +47,8 @@ type Tab =
   | 'albumart'
   | 'export'
   | 'library'
-  | 'automation';
+  | 'automation'
+  | 'builder';
 
 export default function Home() {
   const [songs, setSongs] = useState<Song[]>([]);
@@ -73,6 +76,7 @@ export default function Home() {
     { id: 'export' as Tab, label: 'Export', icon: Download },
     { id: 'library' as Tab, label: 'Library', icon: Library },
     { id: 'automation' as Tab, label: 'AI Automation', icon: Bot },
+    { id: 'builder' as Tab, label: 'Visual Builder', icon: Workflow },
   ];
 
   return (
@@ -320,6 +324,13 @@ export default function Home() {
             <div className="bg-white/5 backdrop-blur-lg rounded-2xl border border-white/10 overflow-hidden" style={{ height: 'calc(100vh - 300px)', minHeight: '600px' }}>
               <WorkflowAutomation />
             </div>
+          </div>
+        )}
+
+        {/* Visual Workflow Builder Tab */}
+        {activeTab === 'builder' && (
+          <div className="fixed inset-0 top-[140px] z-40">
+            <VisualWorkflowBuilder />
           </div>
         )}
       </div>
