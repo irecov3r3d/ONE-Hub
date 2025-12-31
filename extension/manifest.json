@@ -31,6 +31,7 @@
     "https://vscode.dev/*",
     "https://replit.com/*",
     "https://docs.google.com/*",
+    "https://notebooklm.google.com/*",
     "https://notion.so/*",
     "https://www.notion.so/*",
     "http://localhost:*/*",
@@ -79,6 +80,13 @@
         "https://discord.com/*"
       ],
       "js": ["scripts/content-discord.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://notebooklm.google.com/*"
+      ],
+      "js": ["scripts/content-notebooklm.js"],
       "run_at": "document_idle"
     },
     {
