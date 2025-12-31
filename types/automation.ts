@@ -354,6 +354,14 @@ export interface WaitCondition {
   script?: string;
   timeout?: number;           // Max wait time
   pollInterval?: number;      // Check interval
+  validation?: {              // Content validation
+    minLength?: number;
+    maxLength?: number;
+    mustContain?: string[];
+    mustNotContain?: string[];
+    pattern?: string;
+    format?: string;
+  };
 }
 
 export interface ValidationRule {

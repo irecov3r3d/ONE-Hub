@@ -1,0 +1,123 @@
+{
+  "manifest_version": 3,
+  "name": "ONE-Hub AI Automation Bridge",
+  "version": "1.0.0",
+  "description": "Browser bridge for ONE-Hub multi-tab AI automation. Enables extracting and injecting data across AI tool tabs.",
+
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "scripting",
+    "clipboardRead",
+    "clipboardWrite",
+    "storage"
+  ],
+
+  "host_permissions": [
+    "https://chat.openai.com/*",
+    "https://chatgpt.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "https://bard.google.com/*",
+    "https://discord.com/*",
+    "https://www.midjourney.com/*",
+    "https://suno.com/*",
+    "https://app.suno.ai/*",
+    "https://elevenlabs.io/*",
+    "https://www.runwayml.com/*",
+    "https://app.runwayml.com/*",
+    "https://pika.art/*",
+    "https://github.dev/*",
+    "https://vscode.dev/*",
+    "https://replit.com/*",
+    "https://docs.google.com/*",
+    "https://notion.so/*",
+    "https://www.notion.so/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*"
+  ],
+
+  "background": {
+    "service_worker": "scripts/background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*"
+      ],
+      "js": ["scripts/content-chatgpt.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": ["scripts/content-claude.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/*",
+        "https://bard.google.com/*"
+      ],
+      "js": ["scripts/content-gemini.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://suno.com/*",
+        "https://app.suno.ai/*"
+      ],
+      "js": ["scripts/content-suno.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://discord.com/*"
+      ],
+      "js": ["scripts/content-discord.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["scripts/content-generic.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*",
+      "https://*.vercel.app/*"
+    ]
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["scripts/injected.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
