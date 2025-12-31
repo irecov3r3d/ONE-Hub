@@ -173,3 +173,161 @@ export interface AlbumArtSettings {
   colorPalette?: string[];
   aspectRatio: '1:1' | '16:9' | '4:5';
 }
+
+// ============================================
+// Auto-Splitter Types for Social Media Clips
+// ============================================
+
+export type SocialPlatform = 'tiktok' | 'instagram-reels' | 'youtube-shorts' | 'twitter' | 'facebook' | 'custom';
+
+export interface PlatformPreset {
+  id: SocialPlatform;
+  name: string;
+  maxDuration: number; // in seconds
+  recommendedDuration: number; // optimal clip length
+  aspectRatio: '9:16' | '16:9' | '1:1' | '4:5';
+  description: string;
+}
+
+export interface SplitPoint {
+  id: string;
+  time: number; // in seconds
+  type: 'auto' | 'manual';
+  confidence: number; // 0-1, how confident the detection is
+  reason?: 'beat-drop' | 'silence' | 'energy-peak' | 'transition' | 'scene-change' | 'user-defined';
+  label?: string;
+}
+
+export interface Segment {
+  id: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  score: number; // 0-100, quality/engagement score
+  features: SegmentFeatures;
+  selected: boolean;
+  outputUrl?: string;
+  thumbnailUrl?: string;
+}
+
+export interface SegmentFeatures {
+  avgEnergy: number; // 0-1
+  peakEnergy: number;
+  hasBeatDrop: boolean;
+  hasVocals: boolean;
+  tempo?: number;
+  dominantFrequencies?: number[];
+  silenceRatio: number; // 0-1, how much silence in segment
+}
+
+export interface SplitterSettings {
+  // Detection settings
+  detectionMethod: 'auto' | 'beat' | 'energy' | 'silence' | 'manual';
+  sensitivityThreshold: number; // 0-100
+  silenceThreshold: number; // dB, typically -40 to -20
+  minSilenceDuration: number; // seconds
+  beatSensitivity: number; // 0-100
+
+  // Segment settings
+  targetPlatform: SocialPlatform;
+  minSegmentDuration: number; // seconds
+  maxSegmentDuration: number; // seconds
+  preferredSegmentCount?: number;
+
+  // Quality settings
+  prioritizeEngagement: boolean; // prefer high-energy segments
+  avoidSilence: boolean;
+  crossfadeDuration: number; // seconds for transitions
+  fadeInDuration: number;
+  fadeOutDuration: number;
+
+  // Output settings
+  outputFormat: 'mp3' | 'mp4' | 'wav' | 'webm';
+  outputQuality: 'low' | 'medium' | 'high' | 'maximum';
+  includeVisualizer: boolean;
+  visualizerStyle?: VisualizerSettings['type'];
+}
+
+export interface SplitterJob {
+  id: string;
+  mediaUrl: string;
+  mediaType: 'audio' | 'video';
+  fileName: string;
+  totalDuration: number;
+  status: 'idle' | 'analyzing' | 'detecting' | 'splitting' | 'processing' | 'completed' | 'failed';
+  progress: number; // 0-100
+  currentStep?: string;
+  settings: SplitterSettings;
+
+  // Results
+  splitPoints: SplitPoint[];
+  segments: Segment[];
+  selectedSegments: string[]; // segment IDs
+
+  // Metadata
+  createdAt: Date;
+  completedAt?: Date;
+  error?: string;
+
+  // Audio analysis
+  waveformData?: number[];
+  energyProfile?: number[];
+  beatMarkers?: number[];
+}
+
+export interface SplitResult {
+  jobId: string;
+  segments: ExportedSegment[];
+  totalSegments: number;
+  totalDuration: number;
+  processingTime: number;
+}
+
+export interface ExportedSegment {
+  id: string;
+  index: number;
+  url: string;
+  fileName: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  format: string;
+  fileSize: number;
+  thumbnailUrl?: string;
+  score: number;
+}
+
+export interface AudioAnalysis {
+  duration: number;
+  sampleRate: number;
+  channels: number;
+  bitrate: number;
+
+  // Extracted features
+  waveform: number[]; // normalized amplitude values
+  energyProfile: number[]; // RMS energy over time
+  beatMarkers: number[]; // timestamps of detected beats
+  bpm?: number;
+
+  // Silence detection
+  silenceRegions: TimeRange[];
+
+  // Peak detection
+  peaks: Peak[];
+
+  // Frequency analysis
+  spectralCentroid?: number[];
+  spectralFlux?: number[];
+}
+
+export interface TimeRange {
+  start: number;
+  end: number;
+  duration: number;
+}
+
+export interface Peak {
+  time: number;
+  amplitude: number;
+  type: 'transient' | 'sustained' | 'beat';
+}

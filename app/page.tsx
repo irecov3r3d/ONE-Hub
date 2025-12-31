@@ -7,8 +7,9 @@ import {
   Upload,
   FileAudio,
   Type,
-  Waveform,
+  AudioWaveform,
   Scissors,
+  Clapperboard,
   Download,
   Image as ImageIcon,
   Library,
@@ -18,6 +19,7 @@ import SongLibrary from '@/components/SongLibrary';
 import FileUpload from '@/components/FileUpload';
 import LyricEditor from '@/components/LyricEditor';
 import WaveformEditor from '@/components/WaveformEditor';
+import VideoAudioSplitter from '@/components/VideoAudioSplitter';
 import StemSeparator from '@/components/StemSeparator';
 import AlbumArtGenerator from '@/components/AlbumArtGenerator';
 import ExportPanel from '@/components/ExportPanel';
@@ -39,6 +41,7 @@ type Tab =
   | 'upload'
   | 'lyrics'
   | 'waveform'
+  | 'splitter'
   | 'stems'
   | 'albumart'
   | 'export'
@@ -64,7 +67,8 @@ export default function Home() {
     { id: 'generate' as Tab, label: 'Generate', icon: Sparkles },
     { id: 'upload' as Tab, label: 'Upload', icon: Upload },
     { id: 'lyrics' as Tab, label: 'Lyrics', icon: Type },
-    { id: 'waveform' as Tab, label: 'Editor', icon: Waveform },
+    { id: 'waveform' as Tab, label: 'Editor', icon: AudioWaveform },
+    { id: 'splitter' as Tab, label: 'Auto Clip', icon: Clapperboard },
     { id: 'stems' as Tab, label: 'Stems', icon: Scissors },
     { id: 'albumart' as Tab, label: 'Album Art', icon: ImageIcon },
     { id: 'export' as Tab, label: 'Export', icon: Download },
@@ -168,7 +172,7 @@ export default function Home() {
               />
             ) : (
               <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-12 border border-white/10 text-center">
-                <Waveform className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+                <AudioWaveform className="w-16 h-16 text-gray-500 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-white mb-2">
                   No Audio to Edit
                 </h3>
@@ -191,6 +195,15 @@ export default function Home() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Auto Clip Splitter Tab */}
+        {activeTab === 'splitter' && (
+          <div className="max-w-4xl mx-auto">
+            <VideoAudioSplitter
+              uploadedFileUrl={currentSong?.audioUrl || uploadedFiles[0]?.url}
+            />
           </div>
         )}
 
