@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SplitterService, DEFAULT_SPLITTER_SETTINGS } from '@/lib/services/splitterService';
-import type { SplitterSettings, AudioAnalysis } from '@/types';
+import type { SplitterSettings } from '@/types';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { analysis, settings } = body as {
-      analysis: AudioAnalysis;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      analysis: any; // EnhancedAudioAnalysis from SplitterService
       settings?: Partial<SplitterSettings>;
     };
 
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
       ...settings,
     };
 
-    // Detect split points
+    // Detect split points using advanced analysis
     const splitPoints = await SplitterService.detectSplitPoints(analysis, finalSettings);
 
     // Create segments from split points
