@@ -173,3 +173,6 @@ export interface AlbumArtSettings {
   colorPalette?: string[];
   aspectRatio: '1:1' | '16:9' | '4:5';
 }
+
+// Re-export automation types
+export * from './automation';
