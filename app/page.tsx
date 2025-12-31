@@ -14,6 +14,7 @@ import {
   Library,
   Bot,
   Workflow,
+  FolderKanban,
 } from 'lucide-react';
 import SongGenerator from '@/components/SongGenerator';
 import SongLibrary from '@/components/SongLibrary';
@@ -25,6 +26,7 @@ import AlbumArtGenerator from '@/components/AlbumArtGenerator';
 import ExportPanel from '@/components/ExportPanel';
 import WorkflowAutomation from '@/components/WorkflowAutomation';
 import VisualWorkflowBuilder from '@/components/workflow-builder/VisualWorkflowBuilder';
+import FileOrganizer from '@/components/FileOrganizer';
 import type { UploadedFile } from '@/types';
 
 export interface Song {
@@ -48,7 +50,8 @@ type Tab =
   | 'export'
   | 'library'
   | 'automation'
-  | 'builder';
+  | 'builder'
+  | 'organizer';
 
 export default function Home() {
   const [songs, setSongs] = useState<Song[]>([]);
@@ -75,6 +78,7 @@ export default function Home() {
     { id: 'albumart' as Tab, label: 'Album Art', icon: ImageIcon },
     { id: 'export' as Tab, label: 'Export', icon: Download },
     { id: 'library' as Tab, label: 'Library', icon: Library },
+    { id: 'organizer' as Tab, label: 'Organizer', icon: FolderKanban },
     { id: 'automation' as Tab, label: 'AI Automation', icon: Bot },
     { id: 'builder' as Tab, label: 'Visual Builder', icon: Workflow },
   ];
@@ -315,6 +319,13 @@ export default function Home() {
               </p>
             </div>
             <SongLibrary songs={songs} />
+          </div>
+        )}
+
+        {/* Organizer Tab */}
+        {activeTab === 'organizer' && (
+          <div className="max-w-5xl mx-auto">
+            <FileOrganizer />
           </div>
         )}
 
