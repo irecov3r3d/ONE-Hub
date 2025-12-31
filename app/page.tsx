@@ -10,6 +10,7 @@ import {
   AudioWaveform,
   Scissors,
   Clapperboard,
+  MicOff,
   Download,
   Image as ImageIcon,
   Library,
@@ -20,6 +21,7 @@ import FileUpload from '@/components/FileUpload';
 import LyricEditor from '@/components/LyricEditor';
 import WaveformEditor from '@/components/WaveformEditor';
 import VideoAudioSplitter from '@/components/VideoAudioSplitter';
+import VocalRemover from '@/components/VocalRemover';
 import StemSeparator from '@/components/StemSeparator';
 import AlbumArtGenerator from '@/components/AlbumArtGenerator';
 import ExportPanel from '@/components/ExportPanel';
@@ -42,6 +44,7 @@ type Tab =
   | 'lyrics'
   | 'waveform'
   | 'splitter'
+  | 'vocals'
   | 'stems'
   | 'albumart'
   | 'export'
@@ -69,6 +72,7 @@ export default function Home() {
     { id: 'lyrics' as Tab, label: 'Lyrics', icon: Type },
     { id: 'waveform' as Tab, label: 'Editor', icon: AudioWaveform },
     { id: 'splitter' as Tab, label: 'Auto Clip', icon: Clapperboard },
+    { id: 'vocals' as Tab, label: 'Vocal Remove', icon: MicOff },
     { id: 'stems' as Tab, label: 'Stems', icon: Scissors },
     { id: 'albumart' as Tab, label: 'Album Art', icon: ImageIcon },
     { id: 'export' as Tab, label: 'Export', icon: Download },
@@ -202,6 +206,15 @@ export default function Home() {
         {activeTab === 'splitter' && (
           <div className="max-w-4xl mx-auto">
             <VideoAudioSplitter
+              uploadedFileUrl={currentSong?.audioUrl || uploadedFiles[0]?.url}
+            />
+          </div>
+        )}
+
+        {/* Vocal Remover Tab */}
+        {activeTab === 'vocals' && (
+          <div className="max-w-2xl mx-auto">
+            <VocalRemover
               uploadedFileUrl={currentSong?.audioUrl || uploadedFiles[0]?.url}
             />
           </div>
