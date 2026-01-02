@@ -2,11 +2,12 @@
 // Handles album art and video visualizer generation
 
 import type { AlbumArtSettings, VisualizerSettings } from '@/types';
+import { GeometricArtGenerator, type ArtStyle } from './geometricArtGenerator';
 
 export class VisualService {
   /**
-   * Generate album art using AI
-   * Can integrate with DALL-E, Midjourney, Stable Diffusion, etc.
+   * Generate album art using geometric patterns (free, no API needed)
+   * Falls back to AI if API keys are configured
    */
   static async generateAlbumArt(params: {
     songTitle: string;
@@ -16,18 +17,72 @@ export class VisualService {
   }): Promise<string> {
     const { songTitle, genre, mood, settings } = params;
 
-    // Build prompt for image generation
+    // Check if AI API keys are available
+    const hasAIKey = process.env.OPENAI_API_KEY || process.env.STABILITY_API_KEY;
+
+    if (!hasAIKey) {
+      // Use geometric pattern generator (100% free!)
+      console.log('🎨 Generating geometric album art (no API keys configured)');
+
+      // Map album style to geometric style
+      const styleMap: Record<string, ArtStyle> = {
+        'abstract': 'abstract',
+        'realistic': 'gradient',
+        'minimalist': 'circles',
+        'vintage': 'lines',
+        'modern': 'waves',
+      };
+
+      const artStyle = styleMap[settings.style] || 'abstract';
+
+      // Generate color scheme based on genre and mood
+      const { primaryColor, secondaryColor } = this.getColorScheme(genre, mood);
+
+      // Use song title as seed for reproducible art
+      const dataUrl = GeometricArtGenerator.generate({
+        style: artStyle,
+        primaryColor,
+        secondaryColor,
+        complexity: 7,
+        seed: songTitle + genre + mood,
+      });
+
+      return dataUrl;
+    }
+
+    // If AI keys are available, use AI generation
     const prompt = settings.prompt ||
       `Album cover art for a ${mood} ${genre} song called "${songTitle}",
        ${settings.style} style, high quality, professional music cover`;
 
-    // TODO: Integrate with image generation API
-    // Options: OpenAI DALL-E, Stability AI, Replicate
-
+    // TODO: Integrate with image generation API when keys available
     await this.simulateProcessing(8000);
-
-    // Mock return - replace with actual generated image URL
     return `https://picsum.photos/seed/${songTitle}/1000/1000`;
+  }
+
+  /**
+   * Get color scheme based on genre and mood
+   */
+  private static getColorScheme(genre: string, mood: string): {
+    primaryColor: string;
+    secondaryColor: string;
+  } {
+    const genreColors: Record<string, { primary: string; secondary: string }> = {
+      'Pop': { primary: '#ec4899', secondary: '#8b5cf6' },
+      'Rock': { primary: '#ef4444', secondary: '#000000' },
+      'Electronic': { primary: '#3b82f6', secondary: '#8b5cf6' },
+      'Hip Hop': { primary: '#eab308', secondary: '#dc2626' },
+      'Jazz': { primary: '#f59e0b', secondary: '#0f766e' },
+      'Classical': { primary: '#6366f1', secondary: '#db2777' },
+      'Country': { primary: '#d97706', secondary: '#15803d' },
+      'R&B': { primary: '#7c3aed', secondary: '#be123c' },
+    };
+
+    const base = genreColors[genre] || genreColors['Pop'];
+    return {
+      primaryColor: base.primary,
+      secondaryColor: base.secondary,
+    };
   }
 
   /**

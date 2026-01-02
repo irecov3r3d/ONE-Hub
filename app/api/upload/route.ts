@@ -53,23 +53,36 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Optional: DELETE endpoint to remove uploaded files
+// DELETE endpoint to remove uploaded files
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const fileId = searchParams.get('id');
+    const filename = searchParams.get('filename');
 
-    if (!fileId) {
+    if (!filename) {
       return NextResponse.json(
-        { error: 'No file ID provided' },
+        { error: 'No filename provided' },
         { status: 400 }
       );
     }
 
-    // TODO: Implement file deletion
-    // 1. Look up file path from database
-    // 2. Delete file from filesystem
-    // 3. Remove database entry
+    // Delete file from filesystem
+    const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+    const filepath = path.join(uploadsDir, filename);
+
+    // Security check: ensure file is within uploads directory
+    if (!filepath.startsWith(uploadsDir)) {
+      return NextResponse.json(
+        { error: 'Invalid file path' },
+        { status: 403 }
+      );
+    }
+
+    // Delete file if it exists
+    if (existsSync(filepath)) {
+      const { unlink } = await import('fs/promises');
+      await unlink(filepath);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
