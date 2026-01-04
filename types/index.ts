@@ -173,3 +173,109 @@ export interface AlbumArtSettings {
   colorPalette?: string[];
   aspectRatio: '1:1' | '16:9' | '4:5';
 }
+
+// Voice Interaction Types
+export interface VoiceCommand {
+  id: string;
+  transcript: string;
+  confidence: number;
+  timestamp: Date;
+  parsed?: ParsedCommand;
+  executed: boolean;
+  result?: any;
+  error?: string;
+}
+
+export interface ParsedCommand {
+  intent: VoiceIntent;
+  action: string;
+  parameters: Record<string, any>;
+  target?: string; // What component/feature to control
+  confidence: number;
+}
+
+export type VoiceIntent =
+  | 'generate'
+  | 'edit'
+  | 'play'
+  | 'stop'
+  | 'navigate'
+  | 'adjust'
+  | 'export'
+  | 'query'
+  | 'help'
+  | 'beat-maker'
+  | 'unknown';
+
+export interface VoiceSettings {
+  enabled: boolean;
+  language: string;
+  continuous: boolean;
+  interimResults: boolean;
+  autoStart: boolean;
+  feedback: 'visual' | 'audio' | 'both' | 'none';
+}
+
+export interface AIAssistantMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: Date;
+  context?: Record<string, any>;
+  suggestions?: string[];
+}
+
+export interface AIAssistantState {
+  messages: AIAssistantMessage[];
+  isListening: boolean;
+  isSpeaking: boolean;
+  isProcessing: boolean;
+  currentContext: Record<string, any>;
+}
+
+// Beat Maker Types
+export interface BeatPattern {
+  id: string;
+  name: string;
+  section: 'verse' | 'chorus' | 'bridge' | 'intro' | 'outro';
+  events: BeatEvent[];
+  duration: string; // Tone.js time format (e.g., '1m', '4n')
+  bpm: number;
+}
+
+export interface BeatEvent {
+  time: string; // Tone.js time format (e.g., '0:0:0', '0:1:2')
+  instrument: BeatInstrument;
+  note?: string; // For melodic instruments
+  velocity?: number;
+  duration?: string;
+}
+
+export type BeatInstrument =
+  | 'kick'
+  | 'snare'
+  | 'hihat'
+  | 'openHat'
+  | 'clap'
+  | 'rim'
+  | 'bass'
+  | 'subBass'
+  | 'melody'
+  | 'lead'
+  | 'pad'
+  | 'pluck';
+
+export interface BeatMakerState {
+  isPlaying: boolean;
+  bpm: number;
+  volume: number;
+  currentSection: 'verse' | 'chorus' | 'bridge';
+  patterns: Record<string, BeatPattern>;
+  activePattern: string;
+}
+
+export interface BeatExportOptions {
+  format: 'audio' | 'midi' | 'pattern-json';
+  quality?: string;
+  includeMetadata: boolean;
+}

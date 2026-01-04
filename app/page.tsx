@@ -7,11 +7,14 @@ import {
   Upload,
   FileAudio,
   Type,
-  Waveform,
+  AudioWaveform,
   Scissors,
   Download,
   Image as ImageIcon,
   Library,
+  Zap,
+  Mic,
+  Bot,
 } from 'lucide-react';
 import SongGenerator from '@/components/SongGenerator';
 import SongLibrary from '@/components/SongLibrary';
@@ -21,7 +24,10 @@ import WaveformEditor from '@/components/WaveformEditor';
 import StemSeparator from '@/components/StemSeparator';
 import AlbumArtGenerator from '@/components/AlbumArtGenerator';
 import ExportPanel from '@/components/ExportPanel';
-import type { UploadedFile } from '@/types';
+import BeatMaker from '@/components/BeatMaker';
+import VoiceController from '@/components/VoiceController';
+import AIAssistant from '@/components/AIAssistant';
+import type { UploadedFile, ParsedCommand } from '@/types';
 
 export interface Song {
   id: string;
@@ -36,6 +42,7 @@ export interface Song {
 
 type Tab =
   | 'generate'
+  | 'beatmaker'
   | 'upload'
   | 'lyrics'
   | 'waveform'
@@ -50,6 +57,8 @@ export default function Home() {
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [lyrics, setLyrics] = useState('');
+  const [showVoice, setShowVoice] = useState(true);
+  const [showAI, setShowAI] = useState(true);
 
   const handleSongGenerated = (song: Song) => {
     setSongs(prev => [song, ...prev]);
@@ -60,11 +69,35 @@ export default function Home() {
     setUploadedFiles(prev => [...prev, ...files]);
   };
 
+  const handleVoiceCommand = (command: ParsedCommand) => {
+    console.log('Voice command received:', command);
+
+    // Navigate to tabs
+    if (command.action === 'navigate_to_tab') {
+      const tab = command.parameters.tab as Tab;
+      if (tab) setActiveTab(tab);
+    } else if (command.action === 'navigate_to_beat_maker') {
+      setActiveTab('beatmaker');
+    } else if (command.action === 'play_audio') {
+      // Trigger play on current audio
+      console.log('Play audio command');
+    } else if (command.action === 'stop_audio') {
+      // Trigger stop on current audio
+      console.log('Stop audio command');
+    } else if (command.action === 'generate_song') {
+      setActiveTab('generate');
+      // TODO: Auto-fill form with command parameters
+    }
+
+    // Add more command handling as needed
+  };
+
   const tabs = [
     { id: 'generate' as Tab, label: 'Generate', icon: Sparkles },
+    { id: 'beatmaker' as Tab, label: 'Beat Maker', icon: Zap },
     { id: 'upload' as Tab, label: 'Upload', icon: Upload },
     { id: 'lyrics' as Tab, label: 'Lyrics', icon: Type },
-    { id: 'waveform' as Tab, label: 'Editor', icon: Waveform },
+    { id: 'waveform' as Tab, label: 'Editor', icon: AudioWaveform },
     { id: 'stems' as Tab, label: 'Stems', icon: Scissors },
     { id: 'albumart' as Tab, label: 'Album Art', icon: ImageIcon },
     { id: 'export' as Tab, label: 'Export', icon: Download },
@@ -76,15 +109,43 @@ export default function Home() {
       {/* Header */}
       <header className="border-b border-white/10 bg-black/30 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg">
-              <Music className="w-8 h-8 text-white" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg">
+                <Music className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-white">OnEstudiO</h1>
+                <p className="text-purple-300 text-sm">
+                  AI-Powered Music Production Suite
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-3xl font-bold text-white">Song Generator Pro</h1>
-              <p className="text-purple-300 text-sm">
-                Complete AI music creation platform
-              </p>
+
+            {/* Voice & AI Toggle */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowVoice(!showVoice)}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${
+                  showVoice
+                    ? 'bg-purple-500 text-white'
+                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                }`}
+              >
+                <Mic size={16} />
+                Voice
+              </button>
+              <button
+                onClick={() => setShowAI(!showAI)}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${
+                  showAI
+                    ? 'bg-purple-500 text-white'
+                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                }`}
+              >
+                <Bot size={16} />
+                AI Assistant
+              </button>
             </div>
           </div>
 
@@ -115,8 +176,21 @@ export default function Home() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-12">
-        {/* Generate Tab */}
-        {activeTab === 'generate' && (
+        <div className="flex gap-6">
+          {/* Left Sidebar - Voice Control */}
+          {showVoice && (
+            <div className="w-80 flex-shrink-0">
+              <VoiceController onCommand={handleVoiceCommand} />
+            </div>
+          )}
+
+          {/* Main Content */}
+          <div className="flex-1">
+            {/* Beat Maker Tab */}
+            {activeTab === 'beatmaker' && <BeatMaker />}
+
+            {/* Generate Tab */}
+            {activeTab === 'generate' && (
           <div className="max-w-2xl mx-auto">
             <div className="mb-6">
               <div className="flex items-center gap-2 mb-2">
@@ -168,7 +242,7 @@ export default function Home() {
               />
             ) : (
               <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-12 border border-white/10 text-center">
-                <Waveform className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+                <AudioWaveform className="w-16 h-16 text-gray-500 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-white mb-2">
                   No Audio to Edit
                 </h3>
@@ -309,13 +383,31 @@ export default function Home() {
             <SongLibrary songs={songs} />
           </div>
         )}
+          </div>
+
+          {/* Right Sidebar - AI Assistant */}
+          {showAI && (
+            <div className="w-96 flex-shrink-0">
+              <div className="sticky top-24 h-[calc(100vh-8rem)]">
+                <AIAssistant
+                  context={{
+                    activeTab,
+                    currentSong,
+                    songsCount: songs.length,
+                  }}
+                  className="h-full"
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Footer */}
       <footer className="border-t border-white/10 bg-black/30 backdrop-blur-md mt-20">
         <div className="max-w-7xl mx-auto px-4 py-8">
           <p className="text-center text-gray-500 text-sm">
-            AI-powered music creation platform • Built with Next.js • Open Source
+            OnEstudiO - AI-Powered Music Production Suite • Built with Next.js & Tone.js • Open Source
           </p>
         </div>
       </footer>
