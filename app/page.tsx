@@ -7,11 +7,12 @@ import {
   Upload,
   FileAudio,
   Type,
-  Waveform,
+  Activity,
   Scissors,
   Download,
   Image as ImageIcon,
   Library,
+  BookOpen,
 } from 'lucide-react';
 import SongGenerator from '@/components/SongGenerator';
 import SongLibrary from '@/components/SongLibrary';
@@ -21,6 +22,7 @@ import WaveformEditor from '@/components/WaveformEditor';
 import StemSeparator from '@/components/StemSeparator';
 import AlbumArtGenerator from '@/components/AlbumArtGenerator';
 import ExportPanel from '@/components/ExportPanel';
+import MountainEchoVault from '@/components/MountainEchoVault';
 import type { UploadedFile } from '@/types';
 
 export interface Song {
@@ -42,7 +44,8 @@ type Tab =
   | 'stems'
   | 'albumart'
   | 'export'
-  | 'library';
+  | 'library'
+  | 'vault';
 
 export default function Home() {
   const [songs, setSongs] = useState<Song[]>([]);
@@ -64,11 +67,12 @@ export default function Home() {
     { id: 'generate' as Tab, label: 'Generate', icon: Sparkles },
     { id: 'upload' as Tab, label: 'Upload', icon: Upload },
     { id: 'lyrics' as Tab, label: 'Lyrics', icon: Type },
-    { id: 'waveform' as Tab, label: 'Editor', icon: Waveform },
+    { id: 'waveform' as Tab, label: 'Editor', icon: Activity },
     { id: 'stems' as Tab, label: 'Stems', icon: Scissors },
     { id: 'albumart' as Tab, label: 'Album Art', icon: ImageIcon },
     { id: 'export' as Tab, label: 'Export', icon: Download },
     { id: 'library' as Tab, label: 'Library', icon: Library },
+    { id: 'vault' as Tab, label: 'Vault', icon: BookOpen },
   ];
 
   return (
@@ -168,7 +172,7 @@ export default function Home() {
               />
             ) : (
               <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-12 border border-white/10 text-center">
-                <Waveform className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+                <Activity className="w-16 h-16 text-gray-500 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-white mb-2">
                   No Audio to Edit
                 </h3>
@@ -307,6 +311,13 @@ export default function Home() {
               </p>
             </div>
             <SongLibrary songs={songs} />
+          </div>
+        )}
+
+        {/* Vault Tab */}
+        {activeTab === 'vault' && (
+          <div className="w-full">
+            <MountainEchoVault />
           </div>
         )}
       </div>
