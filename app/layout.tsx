@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Song Generator - AI Music Creation',
-  description: 'Create amazing songs with AI - Generate music from text prompts',
+  title: 'FoodMarket - Crowd-Powered Food Pricing',
+  description: 'Live local prices and recipes powered by your community.',
 };
 
 export default function RootLayout({
@@ -13,7 +13,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">
+      <body className="antialiased bg-slate-950 text-white">
         {children}
       </body>
     </html>

@@ -1,324 +1,523 @@
 'use client';
 
-import { useState } from 'react';
-import {
-  Music,
-  Sparkles,
-  Upload,
-  FileAudio,
-  Type,
-  Waveform,
-  Scissors,
-  Download,
-  Image as ImageIcon,
-  Library,
-} from 'lucide-react';
-import SongGenerator from '@/components/SongGenerator';
-import SongLibrary from '@/components/SongLibrary';
-import FileUpload from '@/components/FileUpload';
-import LyricEditor from '@/components/LyricEditor';
-import WaveformEditor from '@/components/WaveformEditor';
-import StemSeparator from '@/components/StemSeparator';
-import AlbumArtGenerator from '@/components/AlbumArtGenerator';
-import ExportPanel from '@/components/ExportPanel';
-import type { UploadedFile } from '@/types';
+import { useEffect, useMemo, useState } from 'react';
+import type {
+  FoodSource,
+  Ingredient,
+  PriceReport,
+  Recipe,
+  Region,
+} from '@/types/foodmarket';
 
-export interface Song {
-  id: string;
-  title: string;
-  prompt: string;
-  genre: string;
-  mood: string;
-  duration: number;
-  audioUrl: string;
-  createdAt: Date;
-}
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:4000';
+const WS_BASE = API_BASE.replace(/^http/, 'ws');
 
-type Tab =
-  | 'generate'
-  | 'upload'
-  | 'lyrics'
-  | 'waveform'
-  | 'stems'
-  | 'albumart'
-  | 'export'
-  | 'library';
+const fetchJson = async <T,>(path: string, options?: RequestInit): Promise<T> => {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+  return response.json();
+};
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+    value
+  );
+
+const formatRelativeTime = (isoDate: string) => {
+  const diffMs = Date.now() - new Date(isoDate).getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+};
 
 export default function Home() {
-  const [songs, setSongs] = useState<Song[]>([]);
-  const [activeTab, setActiveTab] = useState<Tab>('generate');
-  const [currentSong, setCurrentSong] = useState<Song | null>(null);
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const [lyrics, setLyrics] = useState('');
+  const [deviceId, setDeviceId] = useState('');
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [foodSources, setFoodSources] = useState<FoodSource[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [priceReports, setPriceReports] = useState<PriceReport[]>([]);
+  const [bestPrice, setBestPrice] = useState<PriceReport | null>(null);
+  const [selectedRegionId, setSelectedRegionId] = useState<number | null>(null);
+  const [selectedIngredientId, setSelectedIngredientId] = useState<number | null>(null);
+  const [selectedFoodSourceId, setSelectedFoodSourceId] = useState<number | null>(null);
+  const [priceInput, setPriceInput] = useState('');
+  const [plannerItems, setPlannerItems] = useState<
+    { recipe: Recipe; quantity: number }[]
+  >([]);
+  const [plannerName, setPlannerName] = useState('Weekend Boil Plan');
+  const [plannerStatus, setPlannerStatus] = useState<string | null>(null);
 
-  const handleSongGenerated = (song: Song) => {
-    setSongs(prev => [song, ...prev]);
-    setCurrentSong(song);
+  const selectedIngredient = useMemo(
+    () => ingredients.find(ingredient => ingredient.id === selectedIngredientId) || null,
+    [ingredients, selectedIngredientId]
+  );
+
+  const selectedRegion = useMemo(
+    () => regions.find(region => region.id === selectedRegionId) || null,
+    [regions, selectedRegionId]
+  );
+
+  useEffect(() => {
+    const stored = localStorage.getItem('foodmarket_device_id');
+    if (stored) {
+      setDeviceId(stored);
+      return;
+    }
+    const generated = crypto.randomUUID();
+    localStorage.setItem('foodmarket_device_id', generated);
+    setDeviceId(generated);
+  }, []);
+
+  useEffect(() => {
+    const loadBase = async () => {
+      const [regionData, ingredientData] = await Promise.all([
+        fetchJson<Region[]>('/api/regions'),
+        fetchJson<Ingredient[]>('/api/ingredients'),
+      ]);
+      setRegions(regionData);
+      setIngredients(ingredientData);
+      if (regionData.length > 0) {
+        setSelectedRegionId(regionData[0].id);
+      }
+      if (ingredientData.length > 0) {
+        setSelectedIngredientId(ingredientData[0].id);
+      }
+    };
+
+    loadBase().catch(error => {
+      console.error('Failed to load base data', error);
+    });
+  }, []);
+
+  const refreshFoodSources = async (regionId: number) => {
+    const data = await fetchJson<FoodSource[]>(`/api/food-sources?regionId=${regionId}`);
+    setFoodSources(data);
+    if (data.length > 0) {
+      setSelectedFoodSourceId(data[0].id);
+    }
   };
 
-  const handleFilesUploaded = (files: UploadedFile[]) => {
-    setUploadedFiles(prev => [...prev, ...files]);
+  const refreshRecipes = async (ingredientId: number) => {
+    const data = await fetchJson<Recipe[]>(`/api/recipes?ingredientId=${ingredientId}`);
+    setRecipes(data);
+    setPlannerItems(prev => prev.filter(item => item.recipe.ingredient_id === ingredientId));
   };
 
-  const tabs = [
-    { id: 'generate' as Tab, label: 'Generate', icon: Sparkles },
-    { id: 'upload' as Tab, label: 'Upload', icon: Upload },
-    { id: 'lyrics' as Tab, label: 'Lyrics', icon: Type },
-    { id: 'waveform' as Tab, label: 'Editor', icon: Waveform },
-    { id: 'stems' as Tab, label: 'Stems', icon: Scissors },
-    { id: 'albumart' as Tab, label: 'Album Art', icon: ImageIcon },
-    { id: 'export' as Tab, label: 'Export', icon: Download },
-    { id: 'library' as Tab, label: 'Library', icon: Library },
-  ];
+  const refreshPriceReports = async (regionId: number, ingredientId: number) => {
+    const data = await fetchJson<PriceReport[]>(
+      `/api/price-reports?regionId=${regionId}&ingredientId=${ingredientId}`
+    );
+    setPriceReports(data);
+  };
+
+  const refreshBestPrice = async (regionId: number, ingredientId: number) => {
+    const data = await fetchJson<PriceReport | null>(
+      `/api/best-price?regionId=${regionId}&ingredientId=${ingredientId}`
+    );
+    setBestPrice(data);
+  };
+
+  useEffect(() => {
+    if (!selectedRegionId || !selectedIngredientId) return;
+    refreshFoodSources(selectedRegionId).catch(error => console.error(error));
+    refreshRecipes(selectedIngredientId).catch(error => console.error(error));
+    refreshPriceReports(selectedRegionId, selectedIngredientId).catch(error =>
+      console.error(error)
+    );
+    refreshBestPrice(selectedRegionId, selectedIngredientId).catch(error =>
+      console.error(error)
+    );
+  }, [selectedRegionId, selectedIngredientId]);
+
+  useEffect(() => {
+    if (!selectedRegionId || !selectedIngredientId) return;
+    const socket = new WebSocket(WS_BASE);
+    socket.onmessage = event => {
+      const message = JSON.parse(event.data);
+      if (
+        message.type === 'price_report_created' ||
+        message.type === 'price_report_confirmed'
+      ) {
+        refreshPriceReports(selectedRegionId, selectedIngredientId).catch(error =>
+          console.error(error)
+        );
+        refreshBestPrice(selectedRegionId, selectedIngredientId).catch(error =>
+          console.error(error)
+        );
+      }
+    };
+
+    return () => socket.close();
+  }, [selectedRegionId, selectedIngredientId]);
+
+  const handleReportSubmit = async () => {
+    if (!selectedRegionId || !selectedIngredientId || !selectedFoodSourceId || !deviceId) {
+      return;
+    }
+    const priceValue = Number(priceInput);
+    if (!priceValue) return;
+
+    await fetchJson('/api/price-reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        ingredient_id: selectedIngredientId,
+        food_source_id: selectedFoodSourceId,
+        region_id: selectedRegionId,
+        price: priceValue,
+        unit: selectedIngredient?.unit || 'lb',
+        reported_by: deviceId,
+      }),
+    });
+
+    setPriceInput('');
+    setPlannerStatus(null);
+  };
+
+  const handleConfirm = async (reportId: number) => {
+    if (!deviceId) return;
+    await fetchJson(`/api/price-reports/${reportId}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId }),
+    });
+  };
+
+  const addRecipeToPlan = (recipe: Recipe) => {
+    setPlannerItems(prev => {
+      if (prev.find(item => item.recipe.id === recipe.id)) {
+        return prev;
+      }
+      return [...prev, { recipe, quantity: recipe.servings }];
+    });
+    setPlannerStatus(null);
+  };
+
+  const updatePlannerQuantity = (recipeId: number, quantity: number) => {
+    setPlannerItems(prev =>
+      prev.map(item =>
+        item.recipe.id === recipeId ? { ...item, quantity } : item
+      )
+    );
+  };
+
+  const removePlannerItem = (recipeId: number) => {
+    setPlannerItems(prev => prev.filter(item => item.recipe.id !== recipeId));
+  };
+
+  const plannerTotalCost = useMemo(() => {
+    if (!bestPrice) return null;
+    return plannerItems.reduce(
+      (total, item) => total + item.quantity * bestPrice.price,
+      0
+    );
+  }, [plannerItems, bestPrice]);
+
+  const handleSavePlanner = async () => {
+    if (!selectedRegionId || !deviceId || plannerItems.length === 0) return;
+    const ingredientQuantities = plannerItems.reduce<Record<string, number>>(
+      (acc, item) => {
+        acc[item.recipe.ingredient_id] =
+          (acc[item.recipe.ingredient_id] || 0) + item.quantity;
+        return acc;
+      },
+      {}
+    );
+    await fetchJson('/api/playlists', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: plannerName,
+        recipe_ids: plannerItems.map(item => item.recipe.id),
+        ingredient_quantities: ingredientQuantities,
+        region_id: selectedRegionId,
+        created_by: deviceId,
+      }),
+    });
+    setPlannerStatus('Cook plan saved!');
+  };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-purple-900 via-black to-blue-900">
-      {/* Header */}
-      <header className="border-b border-white/10 bg-black/30 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg">
-              <Music className="w-8 h-8 text-white" />
-            </div>
+    <main className="min-h-screen bg-slate-950 text-white">
+      <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col gap-4">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-white">Song Generator Pro</h1>
-              <p className="text-purple-300 text-sm">
-                Complete AI music creation platform
+              <p className="text-sm uppercase tracking-[0.3em] text-emerald-300">FoodMarket</p>
+              <h1 className="text-3xl font-semibold">
+                Crowd-powered local food pricing & recipes
+              </h1>
+              <p className="text-slate-300">
+                Live crawfish intel for Hammond, LA — powered by your neighbors.
+              </p>
+            </div>
+            <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm">
+              <p className="text-emerald-200">Anonymous device:</p>
+              <p className="font-mono text-xs text-emerald-100 break-all">
+                {deviceId || 'Loading...'}
               </p>
             </div>
           </div>
 
-          {/* Tab Navigation */}
-          <div className="mt-6 flex gap-2 overflow-x-auto pb-2">
-            {tabs.map(tab => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`
-                    flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap
-                    transition-all
-                    ${activeTab === tab.id
-                      ? 'bg-purple-500 text-white'
-                      : 'bg-white/10 text-gray-300 hover:bg-white/20'
-                    }
-                  `}
-                >
-                  <Icon className="w-4 h-4" />
-                  {tab.label}
-                </button>
-              );
-            })}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-slate-300">Location</label>
+              <select
+                value={selectedRegionId ?? ''}
+                onChange={event => setSelectedRegionId(Number(event.target.value))}
+                className="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm"
+              >
+                {regions.map(region => (
+                  <option key={region.id} value={region.id}>
+                    {region.name}
+                  </option>
+                ))}
+              </select>
+              {selectedRegion && (
+                <p className="text-xs text-slate-500">
+                  Radius {selectedRegion.radius_km} km • Weighted by distance
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm text-slate-300">Ingredient</label>
+              <select
+                value={selectedIngredientId ?? ''}
+                onChange={event => setSelectedIngredientId(Number(event.target.value))}
+                className="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm"
+              >
+                {ingredients.map(ingredient => (
+                  <option key={ingredient.id} value={ingredient.id}>
+                    {ingredient.emoji} {ingredient.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-12">
-        {/* Generate Tab */}
-        {activeTab === 'generate' && (
-          <div className="max-w-2xl mx-auto">
-            <div className="mb-6">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-5 h-5 text-yellow-400" />
-                <h2 className="text-2xl font-bold text-white">Create Your Song</h2>
-              </div>
-              <p className="text-gray-400">
-                Describe your song and let AI bring it to life
-              </p>
-            </div>
-            <SongGenerator onSongGenerated={handleSongGenerated} />
-          </div>
-        )}
-
-        {/* Upload Tab */}
-        {activeTab === 'upload' && (
-          <div className="max-w-2xl mx-auto">
-            <div className="mb-6">
-              <div className="flex items-center gap-2 mb-2">
-                <Upload className="w-5 h-5 text-blue-400" />
-                <h2 className="text-2xl font-bold text-white">Upload Audio Files</h2>
-              </div>
-              <p className="text-gray-400">
-                Upload vocals, instrumentals, samples, or reference tracks
-              </p>
-            </div>
-            <FileUpload onFilesUploaded={handleFilesUploaded} multiple />
-          </div>
-        )}
-
-        {/* Lyrics Tab */}
-        {activeTab === 'lyrics' && (
-          <div className="max-w-3xl mx-auto">
-            <LyricEditor
-              songTheme={currentSong?.prompt || ''}
-              genre={currentSong?.genre || 'Pop'}
-              mood={currentSong?.mood || 'Happy'}
-              onLyricsChange={setLyrics}
-            />
-          </div>
-        )}
-
-        {/* Waveform Editor Tab */}
-        {activeTab === 'waveform' && (
-          <div className="max-w-5xl mx-auto">
-            {currentSong || uploadedFiles.length > 0 ? (
-              <WaveformEditor
-                audioUrl={currentSong?.audioUrl || uploadedFiles[0]?.url || ''}
-              />
-            ) : (
-              <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-12 border border-white/10 text-center">
-                <Waveform className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">
-                  No Audio to Edit
-                </h3>
-                <p className="text-gray-400 mb-6">
-                  Generate a song or upload an audio file to start editing
-                </p>
-                <div className="flex gap-4 justify-center">
-                  <button
-                    onClick={() => setActiveTab('generate')}
-                    className="px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors"
-                  >
-                    Generate Song
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('upload')}
-                    className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
-                  >
-                    Upload File
-                  </button>
+      <section className="max-w-6xl mx-auto px-6 py-8 grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="space-y-8">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
+            <h2 className="text-xl font-semibold mb-4">Best price near you</h2>
+            {bestPrice ? (
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-xl bg-slate-950/70 p-4">
+                  <p className="text-sm text-slate-400">Vendor</p>
+                  <p className="text-lg font-semibold">{bestPrice.food_source_name}</p>
+                  <p className="text-xs text-slate-500">
+                    {bestPrice.distance_km} km away
+                  </p>
+                </div>
+                <div className="rounded-xl bg-slate-950/70 p-4">
+                  <p className="text-sm text-slate-400">Price</p>
+                  <p className="text-2xl font-semibold text-emerald-300">
+                    {formatCurrency(bestPrice.price)} / {bestPrice.unit}
+                  </p>
+                  <p className="text-xs text-slate-500">Score {bestPrice.score}</p>
+                </div>
+                <div className="rounded-xl bg-slate-950/70 p-4">
+                  <p className="text-sm text-slate-400">Confirmations</p>
+                  <p className="text-2xl font-semibold">{bestPrice.confirmations}</p>
+                  <p className="text-xs text-slate-500">Most-confirmed wins</p>
                 </div>
               </div>
+            ) : (
+              <p className="text-slate-400">No active prices yet. Be the first to report.</p>
             )}
           </div>
-        )}
 
-        {/* Stems Tab */}
-        {activeTab === 'stems' && (
-          <div className="max-w-2xl mx-auto">
-            {currentSong || uploadedFiles.length > 0 ? (
-              <StemSeparator
-                audioUrl={currentSong?.audioUrl || uploadedFiles[0]?.url || ''}
-              />
-            ) : (
-              <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-12 border border-white/10 text-center">
-                <Scissors className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">
-                  No Audio for Stem Separation
-                </h3>
-                <p className="text-gray-400 mb-6">
-                  Generate a song or upload an audio file to separate stems
-                </p>
-                <div className="flex gap-4 justify-center">
-                  <button
-                    onClick={() => setActiveTab('generate')}
-                    className="px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors"
-                  >
-                    Generate Song
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('upload')}
-                    className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
-                  >
-                    Upload File
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Album Art Tab */}
-        {activeTab === 'albumart' && (
-          <div className="max-w-2xl mx-auto">
-            {currentSong ? (
-              <AlbumArtGenerator
-                songTitle={currentSong.title}
-                genre={currentSong.genre}
-                mood={currentSong.mood}
-              />
-            ) : (
-              <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-12 border border-white/10 text-center">
-                <ImageIcon className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">
-                  No Song Selected
-                </h3>
-                <p className="text-gray-400 mb-6">
-                  Generate a song first to create album art
-                </p>
-                <button
-                  onClick={() => setActiveTab('generate')}
-                  className="px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors"
+          <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
+            <h2 className="text-xl font-semibold mb-4">Live price feed</h2>
+            <div className="space-y-3">
+              {priceReports.map(report => (
+                <div
+                  key={report.id}
+                  className="flex flex-col gap-3 rounded-xl bg-slate-950/70 p-4 md:flex-row md:items-center md:justify-between"
                 >
-                  Generate Song
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Export Tab */}
-        {activeTab === 'export' && (
-          <div className="max-w-2xl mx-auto">
-            {currentSong || uploadedFiles.length > 0 ? (
-              <ExportPanel
-                audioUrl={currentSong?.audioUrl || uploadedFiles[0]?.url || ''}
-                songTitle={currentSong?.title || uploadedFiles[0]?.name || 'song'}
-                lyrics={lyrics}
-              />
-            ) : (
-              <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-12 border border-white/10 text-center">
-                <Download className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">
-                  No Audio to Export
-                </h3>
-                <p className="text-gray-400 mb-6">
-                  Generate a song or upload an audio file to export
-                </p>
-                <div className="flex gap-4 justify-center">
-                  <button
-                    onClick={() => setActiveTab('generate')}
-                    className="px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors"
-                  >
-                    Generate Song
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('upload')}
-                    className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
-                  >
-                    Upload File
-                  </button>
+                  <div>
+                    <p className="text-sm text-slate-400">{report.food_source_name}</p>
+                    <p className="text-lg font-semibold">
+                      {formatCurrency(report.price)} / {report.unit}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {report.distance_km} km • {formatRelativeTime(report.created_at)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-sm text-slate-300">
+                      <span className="font-semibold">{report.confirmations}</span> confirmations
+                    </div>
+                    <button
+                      onClick={() => handleConfirm(report.id)}
+                      className="rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30"
+                    >
+                      Confirm price
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              ))}
+              {priceReports.length === 0 && (
+                <p className="text-sm text-slate-400">
+                  No live reports yet — submit a price below.
+                </p>
+              )}
+            </div>
           </div>
-        )}
+        </div>
 
-        {/* Library Tab */}
-        {activeTab === 'library' && (
-          <div className="max-w-4xl mx-auto">
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-white mb-2">Your Song Library</h2>
-              <p className="text-gray-400">
-                {songs.length === 0
-                  ? 'Your generated songs will appear here'
-                  : `${songs.length} song${songs.length !== 1 ? 's' : ''} generated`}
+        <div className="space-y-8">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
+            <h2 className="text-xl font-semibold mb-4">Submit a price</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-slate-300">Vendor</label>
+                <select
+                  value={selectedFoodSourceId ?? ''}
+                  onChange={event => setSelectedFoodSourceId(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm"
+                >
+                  {foodSources.map(source => (
+                    <option key={source.id} value={source.id}>
+                      {source.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm text-slate-300">Price per {selectedIngredient?.unit}</label>
+                <input
+                  value={priceInput}
+                  onChange={event => setPriceInput(event.target.value)}
+                  placeholder="4.25"
+                  className="mt-2 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm"
+                />
+              </div>
+              <button
+                onClick={handleReportSubmit}
+                className="w-full rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+              >
+                Submit report
+              </button>
+              <p className="text-xs text-slate-500">
+                Reports expire after 48 hours. Newer reports push older ones down.
               </p>
             </div>
-            <SongLibrary songs={songs} />
           </div>
-        )}
-      </div>
 
-      {/* Footer */}
-      <footer className="border-t border-white/10 bg-black/30 backdrop-blur-md mt-20">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <p className="text-center text-gray-500 text-sm">
-            AI-powered music creation platform • Built with Next.js • Open Source
-          </p>
+          <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
+            <h2 className="text-xl font-semibold mb-4">Cook planner</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-slate-300">Plan name</label>
+                <input
+                  value={plannerName}
+                  onChange={event => setPlannerName(event.target.value)}
+                  className="mt-2 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="space-y-3">
+                {plannerItems.map(item => (
+                  <div
+                    key={item.recipe.id}
+                    className="rounded-xl border border-slate-800 bg-slate-950/70 p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold">{item.recipe.name}</p>
+                        <p className="text-xs text-slate-500">
+                          {item.recipe.servings} servings • {item.recipe.spice_level} spice
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => removePlannerItem(item.recipe.id)}
+                        className="text-xs text-rose-300 hover:text-rose-200"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between">
+                      <label className="text-xs text-slate-400">Quantity ({selectedIngredient?.unit})</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={item.quantity}
+                        onChange={event =>
+                          updatePlannerQuantity(item.recipe.id, Number(event.target.value))
+                        }
+                        className="w-24 rounded-lg bg-slate-900 border border-slate-700 px-2 py-1 text-sm"
+                      />
+                    </div>
+                  </div>
+                ))}
+                {plannerItems.length === 0 && (
+                  <p className="text-sm text-slate-400">
+                    Add recipes from the browser to build your cook plan.
+                  </p>
+                )}
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+                <p className="text-sm text-slate-400">Estimated total cost</p>
+                <p className="text-2xl font-semibold text-emerald-300">
+                  {plannerTotalCost ? formatCurrency(plannerTotalCost) : 'Need live price'}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Uses the current best price near you.
+                </p>
+              </div>
+              <button
+                onClick={handleSavePlanner}
+                className="w-full rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400"
+              >
+                Save cook plan
+              </button>
+              {plannerStatus && <p className="text-xs text-emerald-300">{plannerStatus}</p>}
+            </div>
+          </div>
         </div>
-      </footer>
+      </section>
+
+      <section className="max-w-6xl mx-auto px-6 pb-16">
+        <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <h2 className="text-xl font-semibold">Recipe browser</h2>
+            <p className="text-sm text-slate-400">
+              Tap a recipe to add it to your cook plan.
+            </p>
+          </div>
+          <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {recipes.map(recipe => (
+              <button
+                key={recipe.id}
+                onClick={() => addRecipeToPlan(recipe)}
+                className="text-left rounded-2xl border border-slate-800 bg-slate-950/70 p-5 hover:border-emerald-500/50"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">{recipe.name}</h3>
+                  <span className="text-xs text-amber-300">★ {recipe.rating.toFixed(1)}</span>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  {recipe.spice_level} spice • {recipe.servings} servings
+                </p>
+                <p className="mt-3 text-sm text-slate-300">
+                  {recipe.instructions}
+                </p>
+                <div className="mt-4 rounded-lg bg-slate-900/60 p-3 text-xs text-slate-300">
+                  Best price: {bestPrice ? `${formatCurrency(bestPrice.price)} / ${bestPrice.unit}` : 'awaiting report'}
+                </div>
+              </button>
+            ))}
+            {recipes.length === 0 && (
+              <p className="text-sm text-slate-400">No recipes loaded yet.</p>
+            )}
+          </div>
+        </div>
+      </section>
     </main>
   );
 }
