@@ -10,6 +10,7 @@ import type {
   ModelSelectionStrategy,
 } from '@/lib/config/aiModels';
 import { selectModels, DEFAULT_CONFIG } from '@/lib/config/aiModels';
+import { LocalMusicService } from './localMusicService';
 
 export class MultiModelService {
   /**
@@ -121,6 +122,10 @@ export class MultiModelService {
 
       // Route to appropriate API based on provider
       switch (model.provider) {
+        case 'local':
+          audioUrl = await LocalMusicService.generate(params);
+          break;
+
         case 'replicate':
           audioUrl = await this.generateWithReplicate(model, params);
           break;

@@ -4,7 +4,7 @@
 export interface AIModelConfig {
   id: string;
   name: string;
-  provider: 'replicate' | 'huggingface' | 'custom' | 'openai' | 'stability';
+  provider: 'replicate' | 'huggingface' | 'custom' | 'openai' | 'stability' | 'local';
   modelId: string;
   strengths: string[];
   maxDuration: number; // seconds
@@ -14,6 +14,18 @@ export interface AIModelConfig {
 }
 
 export const AI_MODELS: Record<string, AIModelConfig> = {
+  localMusicgen: {
+    id: 'localMusicgen',
+    name: 'MusicGen Local (FREE)',
+    provider: 'local',
+    modelId: 'facebook/musicgen-small',
+    strengths: ['melody', 'coherent-structure', 'genre-accuracy', 'free', 'unlimited'],
+    maxDuration: 300,
+    costPerGeneration: 0, // FREE!
+    avgGenerationTime: 120, // ~2 min on CPU
+    enabled: true, // Always enabled if server is running
+  },
+
   musicgen: {
     id: 'musicgen',
     name: 'MusicGen (Meta)',
@@ -115,28 +127,45 @@ export function selectModels(
 
   switch (strategy) {
     case 'fastest':
+      // Prefer local model (free, no network latency)
+      if (AI_MODELS.localMusicgen.enabled) {
+        return [AI_MODELS.localMusicgen];
+      }
       return [enabledModels.sort((a, b) => a.avgGenerationTime - b.avgGenerationTime)[0]];
 
     case 'best-quality':
-      // MusicGen is generally highest quality for most cases
+      // Use local MusicGen (same quality as Replicate version)
+      if (AI_MODELS.localMusicgen.enabled) {
+        return [AI_MODELS.localMusicgen];
+      }
       return [AI_MODELS.musicgen];
 
     case 'ensemble-all':
       return enabledModels;
 
     case 'ensemble-top3':
-      // Select top 3 based on cost-effectiveness and quality
-      return [
-        AI_MODELS.musicgen,
-        AI_MODELS.audiocraft,
-        AI_MODELS.riffusion,
-      ].filter(m => m.enabled);
+      // Prefer local model first (free!)
+      const top3 = [];
+      if (AI_MODELS.localMusicgen.enabled) {
+        top3.push(AI_MODELS.localMusicgen);
+      }
+      // Add cloud models if API keys available
+      [AI_MODELS.musicgen, AI_MODELS.audiocraft, AI_MODELS.riffusion]
+        .filter(m => m.enabled)
+        .forEach(m => {
+          if (top3.length < 3) top3.push(m);
+        });
+      return top3;
 
     case 'adaptive':
       // Analyze prompt to choose best models
       return adaptiveModelSelection(prompt, enabledModels);
 
     default:
+      // Default to local if available
+      if (AI_MODELS.localMusicgen.enabled) {
+        return [AI_MODELS.localMusicgen];
+      }
       return [AI_MODELS.musicgen];
   }
 }
