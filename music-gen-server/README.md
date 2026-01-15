@@ -3,6 +3,10 @@
 100% FREE AI music generation using Meta's MusicGen.
 No API keys, no credits, no limits!
 
+## 🚀 NEW: Smart Caching - Never Generate the Same Song Twice!
+
+The server now automatically caches all generated songs. If you request the same prompt/genre/mood/duration again, you get the result **instantly** from cache instead of waiting minutes to regenerate!
+
 ## Quick Start
 
 ### 1. Install Dependencies
@@ -47,12 +51,14 @@ Choose based on your hardware:
 ## API Endpoints
 
 ### POST /generate
-Generate music from text prompt
+Generate music from text prompt (with smart caching!)
 
 **Request:**
 ```json
 {
   "prompt": "relaxing piano jazz",
+  "genre": "Jazz",
+  "mood": "Relaxed",
   "duration": 10,
   "model_size": "small"
 }
@@ -64,12 +70,54 @@ Generate music from text prompt
   "id": "abc123",
   "status": "completed",
   "audio_url": "/outputs/song_abc123.wav",
-  "progress": 1.0
+  "progress": 1.0,
+  "cached": false,
+  "generation_time": 120.5
 }
 ```
 
+**Note:** If `cached: true`, the song was returned instantly from cache!
+
 ### GET /outputs/{filename}
 Download generated audio file
+
+### GET /stats
+Get cache statistics
+
+**Response:**
+```json
+{
+  "total_songs_cached": 15,
+  "cache_hits": 8,
+  "cache_misses": 7,
+  "hit_rate_percent": 53.33,
+  "total_generations": 15,
+  "time_saved_seconds": 960.4,
+  "message": "You've saved 16.0 minutes by using cache!"
+}
+```
+
+### GET /library?limit=20
+Get recently generated songs from cache
+
+**Response:**
+```json
+{
+  "songs": [
+    {
+      "id": 1,
+      "prompt": "upbeat electronic dance music",
+      "genre": "Electronic",
+      "mood": "Happy",
+      "duration": 10,
+      "audio_path": "./outputs/song_abc123.wav",
+      "created_at": "2026-01-15T10:30:00",
+      "access_count": 3
+    }
+  ],
+  "total": 1
+}
+```
 
 ## Integration with Next.js App
 

@@ -51,6 +51,8 @@ export class LocalMusicService {
         },
         body: JSON.stringify({
           prompt: enhancedPrompt,
+          genre: params.genre,
+          mood: params.mood,
           duration: params.duration,
           model_size: 'small', // Can make this configurable
         }),
@@ -70,7 +72,12 @@ export class LocalMusicService {
       // Return full URL to the audio file
       const audioUrl = `${this.LOCAL_SERVER}${result.audio_url}`;
 
-      console.log(`✅ Generated locally: ${result.id}`);
+      // Log cache status
+      if (result.cached) {
+        console.log(`🎉 Cache HIT! Returned instantly (saved ${result.generation_time.toFixed(1)}s)`);
+      } else {
+        console.log(`✅ Generated locally: ${result.id} (${result.generation_time.toFixed(1)}s)`);
+      }
 
       return audioUrl;
 
@@ -120,6 +127,60 @@ export class LocalMusicService {
       return await response.json();
     } catch (error) {
       throw new Error('Local music server is not running');
+    }
+  }
+
+  /**
+   * Get cache statistics
+   */
+  static async getCacheStats(): Promise<{
+    total_songs_cached: number;
+    cache_hits: number;
+    cache_misses: number;
+    hit_rate_percent: number;
+    total_generations: number;
+    time_saved_seconds: number;
+    message: string;
+  }> {
+    try {
+      const response = await fetch(`${this.LOCAL_SERVER}/stats`);
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch cache stats');
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error('Could not retrieve cache statistics');
+    }
+  }
+
+  /**
+   * Get recently generated songs from library
+   */
+  static async getLibrary(limit: number = 20): Promise<{
+    songs: Array<{
+      id: number;
+      prompt: string;
+      genre: string;
+      mood: string;
+      duration: number;
+      audio_path: string;
+      created_at: string;
+      access_count: number;
+    }>;
+    total: number;
+  }> {
+    try {
+      const response = await fetch(`${this.LOCAL_SERVER}/library?limit=${limit}`);
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch library');
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error('Could not retrieve song library');
     }
   }
 }

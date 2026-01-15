@@ -16,6 +16,8 @@ import os
 from pathlib import Path
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from database import MusicDatabase
+import time
 
 app = FastAPI(title="Local Music Generator")
 
@@ -32,6 +34,9 @@ app.add_middleware(
 model = None
 executor = ThreadPoolExecutor(max_workers=1)
 
+# Database for caching songs
+db = MusicDatabase()
+
 # Output directory
 OUTPUT_DIR = Path("./outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -39,6 +44,8 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 class GenerationRequest(BaseModel):
     prompt: str
+    genre: str = ""
+    mood: str = ""
     duration: int = 10  # seconds
     model_size: str = "small"  # small, medium, large
 
@@ -48,6 +55,8 @@ class GenerationResponse(BaseModel):
     status: str
     audio_url: str = None
     progress: float = 0.0
+    cached: bool = False
+    generation_time: float = 0.0
 
 
 def load_model(model_size: str = "small"):
@@ -161,10 +170,37 @@ async def health():
 @app.post("/generate", response_model=GenerationResponse)
 async def generate(request: GenerationRequest):
     """
-    Generate music from text prompt
+    Generate music from text prompt (with caching!)
     """
     try:
-        # Generate unique ID
+        start_time = time.time()
+
+        # Check if we've generated this before
+        cached_song = db.find_cached_song(
+            prompt=request.prompt,
+            genre=request.genre,
+            mood=request.mood,
+            duration=request.duration,
+            model_size=request.model_size
+        )
+
+        if cached_song:
+            # Return cached result instantly!
+            audio_filename = os.path.basename(cached_song['audio_path'])
+            audio_url = f"/outputs/{audio_filename}"
+
+            elapsed = time.time() - start_time
+
+            return GenerationResponse(
+                id=cached_song['id'],
+                status="completed",
+                audio_url=audio_url,
+                progress=1.0,
+                cached=True,
+                generation_time=elapsed
+            )
+
+        # Not cached - generate new music
         gen_id = str(uuid.uuid4())[:8]
         output_path = OUTPUT_DIR / f"song_{gen_id}"
 
@@ -181,12 +217,34 @@ async def generate(request: GenerationRequest):
 
         # Return audio URL
         audio_url = f"/outputs/song_{gen_id}.wav"
+        audio_file_path = f"{output_path}.wav"
+
+        # Get file size
+        file_size = 0
+        if os.path.exists(audio_file_path):
+            file_size = os.path.getsize(audio_file_path)
+
+        elapsed = time.time() - start_time
+
+        # Save to database for future use
+        db.save_song(
+            prompt=request.prompt,
+            audio_path=audio_file_path,
+            genre=request.genre,
+            mood=request.mood,
+            duration=request.duration,
+            model_size=request.model_size,
+            generation_time=elapsed,
+            file_size=file_size
+        )
 
         return GenerationResponse(
             id=gen_id,
             status="completed",
             audio_url=audio_url,
-            progress=1.0
+            progress=1.0,
+            cached=False,
+            generation_time=elapsed
         )
 
     except Exception as e:
@@ -204,6 +262,53 @@ async def get_audio(filename: str):
         raise HTTPException(status_code=404, detail="File not found")
 
     return FileResponse(file_path, media_type="audio/wav")
+
+
+@app.get("/stats")
+async def get_stats():
+    """Get cache statistics"""
+    stats = db.get_stats()
+    return {
+        "total_songs_cached": stats['total_songs'],
+        "cache_hits": stats['cache_hits'],
+        "cache_misses": stats['cache_misses'],
+        "hit_rate_percent": round(stats['hit_rate'], 2),
+        "total_generations": stats['total_generations'],
+        "total_generation_time_seconds": round(stats['total_generation_time'], 1),
+        "time_saved_seconds": round(stats['time_saved'], 1),
+        "message": f"You've saved {round(stats['time_saved'] / 60, 1)} minutes by using cache!"
+    }
+
+
+@app.get("/library")
+async def get_library(limit: int = 20):
+    """Get recently generated songs"""
+    songs = db.list_recent_songs(limit)
+    return {
+        "songs": songs,
+        "total": len(songs)
+    }
+
+
+@app.get("/similar/{song_id}")
+async def get_similar_songs(song_id: int, limit: int = 5):
+    """Find similar songs to a given song"""
+    # Get the original song
+    conn = db.conn
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM songs WHERE id = ?", (song_id,))
+    song = cursor.fetchone()
+
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+
+    # Find similar songs
+    similar = db.find_similar_songs(song['prompt'], song['genre'], limit)
+
+    return {
+        "original": dict(song),
+        "similar": similar
+    }
 
 
 if __name__ == "__main__":
