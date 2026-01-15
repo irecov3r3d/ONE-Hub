@@ -3,9 +3,10 @@
 import React, { useState, useCallback } from 'react';
 import { Node, Edge } from 'reactflow';
 import WorkflowCanvas from './WorkflowCanvas';
+import AIWorkflowGenerator from './AIWorkflowGenerator';
 import { WorkflowNodeData } from './nodes/types';
 import { convertToWorkflow, validateWorkflow } from '@/lib/services/workflowConverter';
-import { Play, Save, FileDown, FileUp, AlertCircle, CheckCircle } from 'lucide-react';
+import { Play, Save, FileDown, FileUp, AlertCircle, CheckCircle, Wand2, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface SavedWorkflow {
   id: string;
@@ -24,6 +25,8 @@ export default function VisualWorkflowBuilder() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportedJson, setExportedJson] = useState<string>('');
+  const [showAIGenerator, setShowAIGenerator] = useState(true);
+  const [canvasKey, setCanvasKey] = useState(0); // Force re-render of canvas
 
   // Handle save from canvas
   const handleSave = useCallback((nodes: Node[], edges: Edge[]) => {
@@ -122,6 +125,21 @@ export default function VisualWorkflowBuilder() {
     setTimeout(() => setSuccessMessage(null), 5000);
   }, [currentNodes, currentEdges, workflowName]);
 
+  // Handle AI-generated workflow
+  const handleAIWorkflowGenerated = useCallback((
+    nodes: Node<WorkflowNodeData>[],
+    edges: Edge[],
+    name: string
+  ) => {
+    setCurrentNodes(nodes);
+    setCurrentEdges(edges);
+    setWorkflowName(name);
+    setCanvasKey(prev => prev + 1); // Force canvas re-render with new nodes
+    setValidationErrors([]);
+    setSuccessMessage(`AI generated "${name}" with ${nodes.length} nodes!`);
+    setTimeout(() => setSuccessMessage(null), 3000);
+  }, []);
+
   return (
     <div className="flex flex-col h-screen bg-zinc-950">
       {/* Top Toolbar */}
@@ -145,6 +163,21 @@ export default function VisualWorkflowBuilder() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAIGenerator(!showAIGenerator)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              showAIGenerator
+                ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                : 'bg-zinc-700 hover:bg-zinc-600 text-white'
+            }`}
+          >
+            <Wand2 size={16} />
+            AI Generate
+            {showAIGenerator ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+
+          <div className="w-px h-6 bg-zinc-700" />
+
           <button
             onClick={handleImport}
             className="flex items-center gap-2 px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600
@@ -176,6 +209,16 @@ export default function VisualWorkflowBuilder() {
         </div>
       </div>
 
+      {/* AI Workflow Generator Panel */}
+      {showAIGenerator && (
+        <div className="px-4 py-3 bg-zinc-900/50 border-b border-zinc-800">
+          <AIWorkflowGenerator
+            onWorkflowGenerated={handleAIWorkflowGenerated}
+            onClose={() => setShowAIGenerator(false)}
+          />
+        </div>
+      )}
+
       {/* Messages */}
       {(validationErrors.length > 0 || successMessage) && (
         <div className="px-4 py-2 bg-zinc-900 border-b border-zinc-800">
@@ -202,6 +245,7 @@ export default function VisualWorkflowBuilder() {
       {/* Main Canvas Area */}
       <div className="flex-1">
         <WorkflowCanvas
+          key={canvasKey}
           onSave={handleSave}
           initialNodes={currentNodes}
           initialEdges={currentEdges}
