@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teach & Repeat</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <img src="../icons/icon-32.png" alt="Logo" width="24" height="24">
+        <h1>Teach & Repeat</h1>
+      </div>
+      <button id="settingsBtn" class="icon-btn" title="Settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Status Bar -->
+    <div id="statusBar" class="status-bar">
+      <span class="status-dot"></span>
+      <span class="status-text">Ready</span>
+    </div>
+
+    <!-- Tab Navigation -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="record">Record</button>
+      <button class="tab" data-tab="macros">Macros</button>
+      <button class="tab" data-tab="ai-chat">AI Chat</button>
+    </nav>
+
+    <!-- Record Tab -->
+    <section id="recordTab" class="tab-content active">
+      <div class="record-controls">
+        <div class="recording-name">
+          <input type="text" id="recordingName" placeholder="Recording name..." value="New Recording">
+        </div>
+
+        <div class="main-controls">
+          <button id="startRecordBtn" class="btn btn-record">
+            <span class="btn-icon">●</span>
+            <span>Start Recording</span>
+          </button>
+          <button id="stopRecordBtn" class="btn btn-stop" disabled>
+            <span class="btn-icon">■</span>
+            <span>Stop Recording</span>
+          </button>
+        </div>
+
+        <div id="recordingStats" class="recording-stats hidden">
+          <div class="stat">
+            <span class="stat-label">Events</span>
+            <span id="eventCount" class="stat-value">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Duration</span>
+            <span id="duration" class="stat-value">0:00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tips">
+        <h4>Quick Tips</h4>
+        <ul>
+          <li>Click anywhere to record click events</li>
+          <li>Type in inputs to record text entry</li>
+          <li>Use keyboard shortcuts for efficiency</li>
+          <li>Scroll events are captured automatically</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Macros Tab -->
+    <section id="macrosTab" class="tab-content">
+      <div class="macros-header">
+        <h3>Saved Macros</h3>
+        <button id="refreshMacrosBtn" class="icon-btn" title="Refresh">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div id="macrosList" class="macros-list">
+        <div class="empty-state">
+          <p>No macros yet</p>
+          <p class="hint">Record your first macro to get started</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI Chat Tab -->
+    <section id="aiChatTab" class="tab-content">
+      <div class="ai-chat-section">
+        <h3>Multi-AI Prompt</h3>
+        <p class="description">Send the same prompt to multiple AI chats simultaneously</p>
+
+        <div class="ai-targets">
+          <label class="checkbox-label">
+            <input type="checkbox" id="targetClaude" checked>
+            <span>Claude</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="targetChatGPT" checked>
+            <span>ChatGPT</span>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="targetCopilot">
+            <span>GitHub Copilot</span>
+          </label>
+        </div>
+
+        <div class="prompt-input">
+          <textarea id="promptInput" placeholder="Enter your prompt here..." rows="4"></textarea>
+        </div>
+
+        <button id="sendToAiBtn" class="btn btn-primary">
+          <span>Send to AI Chats</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+
+        <div id="aiResponses" class="ai-responses hidden">
+          <h4>Responses</h4>
+          <div id="responsesList" class="responses-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span>ONE-Hub</span>
+      <span class="version">v1.0.0</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

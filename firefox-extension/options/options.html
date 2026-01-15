@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teach & Repeat - Settings</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8f9fa;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 32px;
+    }
+
+    header {
+      margin-bottom: 32px;
+    }
+
+    header h1 {
+      font-size: 24px;
+      color: #333;
+      margin-bottom: 4px;
+    }
+
+    header p {
+      color: #6c757d;
+      font-size: 14px;
+    }
+
+    .settings-section {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .settings-section h2 {
+      font-size: 16px;
+      color: #333;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e9ecef;
+    }
+
+    .setting-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #f1f1f1;
+    }
+
+    .setting-item:last-child {
+      border-bottom: none;
+    }
+
+    .setting-info {
+      flex: 1;
+    }
+
+    .setting-label {
+      display: block;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 2px;
+    }
+
+    .setting-description {
+      font-size: 12px;
+      color: #6c757d;
+    }
+
+    .setting-control {
+      margin-left: 16px;
+    }
+
+    /* Toggle Switch */
+    .toggle {
+      position: relative;
+      width: 48px;
+      height: 26px;
+    }
+
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: 0.3s;
+      border-radius: 26px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.3s;
+      border-radius: 50%;
+    }
+
+    .toggle input:checked + .toggle-slider {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .toggle input:checked + .toggle-slider:before {
+      transform: translateX(22px);
+    }
+
+    /* Range slider */
+    input[type="range"] {
+      width: 120px;
+      accent-color: #667eea;
+    }
+
+    /* Select */
+    select {
+      padding: 8px 12px;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      font-size: 13px;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    /* Input */
+    input[type="number"] {
+      padding: 8px 12px;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      font-size: 13px;
+      width: 80px;
+      text-align: center;
+    }
+
+    input[type="number"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    /* Buttons */
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: #e9ecef;
+      color: #495057;
+    }
+
+    .btn-secondary:hover {
+      background: #dee2e6;
+    }
+
+    .btn-danger {
+      background: #dc3545;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #c82333;
+    }
+
+    /* Toast notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 24px;
+      background: #28a745;
+      color: white;
+      border-radius: 8px;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s ease;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    /* Shortcuts table */
+    .shortcuts-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .shortcuts-table td {
+      padding: 8px 0;
+      border-bottom: 1px solid #f1f1f1;
+    }
+
+    .shortcuts-table td:last-child {
+      text-align: right;
+    }
+
+    .shortcut-key {
+      display: inline-block;
+      padding: 4px 8px;
+      background: #e9ecef;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+
+    /* About section */
+    .about-info {
+      text-align: center;
+      padding: 16px;
+    }
+
+    .about-info h3 {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .about-info p {
+      color: #6c757d;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .about-info a {
+      color: #667eea;
+      text-decoration: none;
+    }
+
+    .about-info a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Teach & Repeat Settings</h1>
+      <p>Configure your macro recording and playback preferences</p>
+    </header>
+
+    <!-- Recording Settings -->
+    <section class="settings-section">
+      <h2>Recording</h2>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">Capture Mouse Movement</span>
+          <span class="setting-description">Record mouse cursor movements (may increase macro size)</span>
+        </div>
+        <div class="setting-control">
+          <label class="toggle">
+            <input type="checkbox" id="captureMouseMove">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">Capture Scroll Events</span>
+          <span class="setting-description">Record page and element scrolling</span>
+        </div>
+        <div class="setting-control">
+          <label class="toggle">
+            <input type="checkbox" id="captureScroll" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">Capture Clipboard</span>
+          <span class="setting-description">Record copy/paste operations</span>
+        </div>
+        <div class="setting-control">
+          <label class="toggle">
+            <input type="checkbox" id="captureClipboard" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">Highlight Elements</span>
+          <span class="setting-description">Show visual feedback when recording clicks</span>
+        </div>
+        <div class="setting-control">
+          <label class="toggle">
+            <input type="checkbox" id="highlightElements" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Playback Settings -->
+    <section class="settings-section">
+      <h2>Playback</h2>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">Default Playback Speed</span>
+          <span class="setting-description">Speed multiplier for macro playback</span>
+        </div>
+        <div class="setting-control">
+          <select id="playbackSpeed">
+            <option value="0.5">0.5x (Slow)</option>
+            <option value="1" selected>1x (Normal)</option>
+            <option value="1.5">1.5x (Fast)</option>
+            <option value="2">2x (Very Fast)</option>
+            <option value="3">3x (Fastest)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">Minimum Delay Between Events</span>
+          <span class="setting-description">Minimum time between actions (ms)</span>
+        </div>
+        <div class="setting-control">
+          <input type="number" id="defaultDelay" value="100" min="0" max="1000" step="50">
+        </div>
+      </div>
+    </section>
+
+    <!-- AI Chat Settings -->
+    <section class="settings-section">
+      <h2>AI Chat Integration</h2>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">Default AI Targets</span>
+          <span class="setting-description">AI chats to send prompts to by default</span>
+        </div>
+        <div class="setting-control">
+          <select id="aiChats" multiple size="3" style="width: 150px;">
+            <option value="claude" selected>Claude</option>
+            <option value="chatgpt" selected>ChatGPT</option>
+            <option value="copilot">GitHub Copilot</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Keyboard Shortcuts -->
+    <section class="settings-section">
+      <h2>Keyboard Shortcuts</h2>
+      <table class="shortcuts-table">
+        <tr>
+          <td>Toggle Recording</td>
+          <td><span class="shortcut-key">Alt+Shift+R</span></td>
+        </tr>
+        <tr>
+          <td>Stop Playback</td>
+          <td><span class="shortcut-key">Alt+Shift+S</span></td>
+        </tr>
+        <tr>
+          <td>Pause/Resume Playback</td>
+          <td><span class="shortcut-key">Alt+Shift+P</span></td>
+        </tr>
+      </table>
+      <p style="font-size: 12px; color: #6c757d; margin-top: 12px;">
+        Shortcuts can be customized in Firefox's Add-ons settings (about:addons)
+      </p>
+    </section>
+
+    <!-- Data Management -->
+    <section class="settings-section">
+      <h2>Data Management</h2>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">Export All Macros</span>
+          <span class="setting-description">Download all macros as a JSON file</span>
+        </div>
+        <div class="setting-control">
+          <button class="btn btn-secondary" id="exportBtn">Export</button>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">Import Macros</span>
+          <span class="setting-description">Import macros from a JSON file</span>
+        </div>
+        <div class="setting-control">
+          <button class="btn btn-secondary" id="importBtn">Import</button>
+          <input type="file" id="importFile" accept=".json" style="display: none;">
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">Clear All Macros</span>
+          <span class="setting-description">Delete all saved macros permanently</span>
+        </div>
+        <div class="setting-control">
+          <button class="btn btn-danger" id="clearBtn">Clear All</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- About -->
+    <section class="settings-section">
+      <div class="about-info">
+        <h3>Teach & Repeat</h3>
+        <p>Version 1.0.0</p>
+        <p>Part of <a href="https://github.com/irecov3r3d/ONE-Hub" target="_blank">ONE-Hub</a></p>
+        <p style="margin-top: 12px;">
+          <a href="https://github.com/irecov3r3d/ONE-Hub/issues" target="_blank">Report an Issue</a>
+        </p>
+      </div>
+    </section>
+
+    <!-- Save Button -->
+    <div class="button-group">
+      <button class="btn btn-primary" id="saveBtn">Save Settings</button>
+      <button class="btn btn-secondary" id="resetBtn">Reset to Defaults</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">Settings saved!</div>
+
+  <script src="options.js"></script>
+</body>
+</html>
