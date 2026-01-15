@@ -1,6 +1,7 @@
 # 🦞 FoodMarket MVP
 
 FoodMarket is a crowd-powered local food price + recipe app. This MVP focuses on crawfish pricing in Hammond, LA, but the data model and UI are ingredient-agnostic.
+This repository now only contains the FoodMarket web app and backend service.
 
 ## ✅ MVP Features
 
