@@ -74,26 +74,73 @@ export default function AudioAnalyzer() {
 
   const exportAsJSON = () => {
     if (!analysis) return;
-    const json = analysisService.current.exportAsJSON(analysis);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = file?.name.replace(/\.[^.]+$/, '_analysis.json') || 'analysis.json';
-    a.click();
-    URL.revokeObjectURL(url);
+
+    try {
+      const json = analysisService.current.exportAsJSON(analysis);
+
+      // Validate JSON before creating blob
+      try {
+        JSON.parse(json);
+      } catch (parseError) {
+        throw new Error('Failed to generate valid JSON data');
+      }
+
+      const blob = new Blob([json], { type: 'application/json' });
+      if (!blob || blob.size === 0) {
+        throw new Error('Failed to create export file: Empty data');
+      }
+
+      const url = URL.createObjectURL(blob);
+      if (!document.body) {
+        throw new Error('Document body not available');
+      }
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file?.name.replace(/\.[^.]+$/, '_analysis.json') || 'analysis.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const errorMsg = `Failed to export JSON: ${(err as Error).message}`;
+      setError(errorMsg);
+      console.error('Export error:', err);
+    }
   };
 
   const exportAsText = () => {
     if (!analysis) return;
-    const text = analysisService.current.exportAsText(analysis);
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = file?.name.replace(/\.[^.]+$/, '_analysis.txt') || 'analysis.txt';
-    a.click();
-    URL.revokeObjectURL(url);
+
+    try {
+      const text = analysisService.current.exportAsText(analysis);
+
+      if (!text || text.length === 0) {
+        throw new Error('Failed to generate export text: Empty data');
+      }
+
+      const blob = new Blob([text], { type: 'text/plain' });
+      if (!blob || blob.size === 0) {
+        throw new Error('Failed to create export file: Empty data');
+      }
+
+      const url = URL.createObjectURL(blob);
+      if (!document.body) {
+        throw new Error('Document body not available');
+      }
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file?.name.replace(/\.[^.]+$/, '_analysis.txt') || 'analysis.txt';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const errorMsg = `Failed to export text: ${(err as Error).message}`;
+      setError(errorMsg);
+      console.error('Export error:', err);
+    }
   };
 
   return (

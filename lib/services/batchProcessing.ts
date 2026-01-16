@@ -40,6 +40,11 @@ export class BatchProcessingService {
     files: File[],
     onProgress?: (progress: BatchProgress) => void
   ): Promise<BatchJob> {
+    // Validate input
+    if (!files || files.length === 0) {
+      throw new Error('No files provided for batch analysis');
+    }
+
     const jobId = this.generateJobId();
 
     const job: BatchJob = {
@@ -54,12 +59,39 @@ export class BatchProcessingService {
 
     this.activeJobs.set(jobId, job);
 
-    // Process files in batches
-    await this.processBatch(job, onProgress);
+    try {
+      // Process files in batches
+      await this.processBatch(job, onProgress);
 
-    job.status = 'completed';
-    job.endTime = new Date();
-    job.progress = 100;
+      // Mark as completed if we have any successful results
+      if (job.results.size > 0) {
+        job.status = 'completed';
+      } else if (job.errors.size === files.length) {
+        // All files failed
+        job.status = 'failed';
+        throw new Error(`Batch processing failed: All ${files.length} files failed to process`);
+      } else {
+        job.status = 'completed';
+      }
+
+      job.endTime = new Date();
+      job.progress = 100;
+    } catch (error) {
+      // Ensure job status is updated on error
+      job.status = 'failed';
+      job.endTime = new Date();
+      job.progress = (job.results.size / files.length) * 100;
+
+      console.error('Batch analysis error:', {
+        jobId: job.id,
+        totalFiles: files.length,
+        successfulFiles: job.results.size,
+        failedFiles: job.errors.size,
+        error: error
+      });
+
+      throw new Error(`Batch analysis failed: ${(error as Error).message}. Successfully processed ${job.results.size}/${files.length} files.`);
+    }
 
     return job;
   }
@@ -154,23 +186,34 @@ export class BatchProcessingService {
    */
   exportBatchResults(jobId: string): string {
     const job = this.activeJobs.get(jobId);
-    if (!job) throw new Error('Job not found');
+    if (!job) throw new Error(`Job not found: ${jobId}`);
 
-    const results: Record<string, any> = {};
+    try {
+      const results: Record<string, any> = {};
 
-    job.results.forEach((result, fileName) => {
-      results[fileName] = result;
-    });
+      job.results.forEach((result, fileName) => {
+        results[fileName] = result;
+      });
 
-    return JSON.stringify({
-      jobId: job.id,
-      processedFiles: job.results.size,
-      failedFiles: job.errors.size,
-      startTime: job.startTime,
-      endTime: job.endTime,
-      results,
-      errors: Object.fromEntries(job.errors),
-    }, null, 2);
+      const exportData = {
+        jobId: job.id,
+        processedFiles: job.results.size,
+        failedFiles: job.errors.size,
+        startTime: job.startTime,
+        endTime: job.endTime,
+        results,
+        errors: Object.fromEntries(job.errors),
+      };
+
+      const jsonString = JSON.stringify(exportData, null, 2);
+
+      // Validate the generated JSON
+      JSON.parse(jsonString);
+
+      return jsonString;
+    } catch (error) {
+      throw new Error(`Failed to export batch results: ${(error as Error).message}`);
+    }
   }
 
   /**

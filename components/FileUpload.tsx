@@ -94,10 +94,16 @@ export default function FileUpload({
       });
 
       if (!response.ok) {
-        throw new Error('Upload failed');
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        throw new Error(`Failed to parse server response for ${file.name}: Invalid JSON`);
+      }
 
       // Get audio duration for audio files
       let duration: number | undefined;
@@ -123,13 +129,26 @@ export default function FileUpload({
   };
 
   const getAudioDuration = (file: File): Promise<number> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const audio = new Audio();
-      audio.src = URL.createObjectURL(file);
+      const objectUrl = URL.createObjectURL(file);
+      audio.src = objectUrl;
+
       audio.addEventListener('loadedmetadata', () => {
         resolve(audio.duration);
-        URL.revokeObjectURL(audio.src);
+        URL.revokeObjectURL(objectUrl);
       });
+
+      audio.addEventListener('error', (e) => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error(`Failed to load audio metadata for ${file.name}: ${audio.error?.message || 'Unknown error'}`));
+      });
+
+      // Timeout after 10 seconds
+      setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error(`Timeout loading audio metadata for ${file.name}`));
+      }, 10000);
     });
   };
 

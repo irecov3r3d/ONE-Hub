@@ -54,14 +54,70 @@ export class AnalysisStorageService {
       const data = localStorage.getItem(this.STORAGE_KEY);
       if (!data) return [];
 
-      const parsed = JSON.parse(data);
-      // Convert timestamp strings back to Date objects
-      return parsed.map((item: any) => ({
-        ...item,
-        timestamp: new Date(item.timestamp),
-      }));
+      let parsed: any;
+      try {
+        parsed = JSON.parse(data);
+      } catch (parseError) {
+        console.error('Failed to parse stored analysis history - corrupted data detected:', parseError);
+
+        // Attempt to backup corrupted data before clearing
+        try {
+          const backupKey = `${this.STORAGE_KEY}_corrupted_${Date.now()}`;
+          localStorage.setItem(backupKey, data);
+          console.warn(`Corrupted data backed up to: ${backupKey}`);
+        } catch (backupError) {
+          console.error('Could not backup corrupted data:', backupError);
+        }
+
+        // Clear corrupted data
+        localStorage.removeItem(this.STORAGE_KEY);
+        throw new Error('Analysis history data is corrupted and has been cleared. A backup was created if storage allowed.');
+      }
+
+      // Validate data structure
+      if (!Array.isArray(parsed)) {
+        console.error('Stored analysis history is not an array:', typeof parsed);
+        localStorage.removeItem(this.STORAGE_KEY);
+        throw new Error('Analysis history data structure is invalid and has been cleared.');
+      }
+
+      // Convert and validate each item
+      const validItems: StoredAnalysis[] = [];
+      for (let i = 0; i < parsed.length; i++) {
+        try {
+          const item = parsed[i];
+
+          // Validate required fields
+          if (!item.id || !item.fileName || !item.analysis) {
+            console.warn(`Skipping invalid history item at index ${i}: missing required fields`);
+            continue;
+          }
+
+          validItems.push({
+            ...item,
+            timestamp: new Date(item.timestamp),
+          });
+        } catch (itemError) {
+          console.warn(`Skipping invalid history item at index ${i}:`, itemError);
+          continue;
+        }
+      }
+
+      // If we filtered out items, save the cleaned data
+      if (validItems.length < parsed.length) {
+        console.warn(`Cleaned ${parsed.length - validItems.length} invalid items from history`);
+        this.saveHistory(validItems);
+      }
+
+      return validItems;
     } catch (error) {
       console.error('Error loading history:', error);
+
+      // If error was thrown by our validation, re-throw with context
+      if (error instanceof Error && error.message.includes('corrupted')) {
+        throw error;
+      }
+
       return [];
     }
   }
@@ -182,15 +238,56 @@ export class AnalysisStorageService {
    */
   importHistory(json: string): boolean {
     try {
-      const imported = JSON.parse(json);
-      if (Array.isArray(imported)) {
-        this.saveHistory(imported);
-        return true;
+      if (!json || json.trim().length === 0) {
+        throw new Error('Cannot import empty data');
       }
-      return false;
+
+      let imported: any;
+      try {
+        imported = JSON.parse(json);
+      } catch (parseError) {
+        throw new Error(`Invalid JSON format: ${(parseError as Error).message}`);
+      }
+
+      if (!Array.isArray(imported)) {
+        throw new Error('Import data must be an array of analyses');
+      }
+
+      // Validate each item before importing
+      const validItems: StoredAnalysis[] = [];
+      for (let i = 0; i < imported.length; i++) {
+        const item = imported[i];
+
+        if (!item.id || !item.fileName || !item.analysis) {
+          console.warn(`Skipping invalid import item at index ${i}: missing required fields`);
+          continue;
+        }
+
+        try {
+          validItems.push({
+            ...item,
+            timestamp: new Date(item.timestamp),
+          });
+        } catch (conversionError) {
+          console.warn(`Skipping item at index ${i} due to conversion error:`, conversionError);
+          continue;
+        }
+      }
+
+      if (validItems.length === 0) {
+        throw new Error('No valid items found in import data');
+      }
+
+      this.saveHistory(validItems);
+
+      if (validItems.length < imported.length) {
+        console.warn(`Imported ${validItems.length}/${imported.length} items (${imported.length - validItems.length} invalid items skipped)`);
+      }
+
+      return true;
     } catch (error) {
       console.error('Error importing history:', error);
-      return false;
+      throw new Error(`Failed to import history: ${(error as Error).message}`);
     }
   }
 

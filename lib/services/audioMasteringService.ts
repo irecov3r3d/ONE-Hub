@@ -26,16 +26,76 @@ export class AudioMasteringService {
     file: File,
     settings: MasteringSettings
   ): Promise<Blob> {
-    const arrayBuffer = await file.arrayBuffer();
-    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+    try {
+      // Validate input file
+      if (!file || file.size === 0) {
+        throw new Error('Invalid audio file: File is empty or undefined');
+      }
 
-    // Process audio through mastering chain
-    const processedBuffer = await this.processMasteringChain(audioBuffer, settings);
+      if (!file.type.startsWith('audio/') && !file.name.match(/\.(mp3|wav|ogg|m4a|flac)$/i)) {
+        throw new Error(`Invalid audio file type: ${file.type || 'unknown'}. Supported formats: MP3, WAV, OGG, M4A, FLAC`);
+      }
 
-    // Convert back to audio file
-    const blob = await this.audioBufferToWav(processedBuffer);
+      // Read file data
+      let arrayBuffer: ArrayBuffer;
+      try {
+        arrayBuffer = await file.arrayBuffer();
+      } catch (err) {
+        throw new Error(`Failed to read audio file: ${(err as Error).message}`);
+      }
 
-    return blob;
+      if (arrayBuffer.byteLength === 0) {
+        throw new Error('Audio file contains no data');
+      }
+
+      // Decode audio data
+      let audioBuffer: AudioBuffer;
+      try {
+        audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+      } catch (err) {
+        throw new Error(`Failed to decode audio file: Invalid or corrupted audio data. ${(err as Error).message}`);
+      }
+
+      // Validate decoded audio
+      if (!audioBuffer || audioBuffer.length === 0) {
+        throw new Error('Decoded audio buffer is empty');
+      }
+
+      if (audioBuffer.numberOfChannels === 0) {
+        throw new Error('Audio file has no channels');
+      }
+
+      // Process audio through mastering chain
+      let processedBuffer: AudioBuffer;
+      try {
+        processedBuffer = await this.processMasteringChain(audioBuffer, settings);
+      } catch (err) {
+        throw new Error(`Audio processing failed: ${(err as Error).message}`);
+      }
+
+      // Convert back to audio file
+      let blob: Blob;
+      try {
+        blob = await this.audioBufferToWav(processedBuffer);
+      } catch (err) {
+        throw new Error(`Failed to create output file: ${(err as Error).message}`);
+      }
+
+      if (!blob || blob.size === 0) {
+        throw new Error('Output file is empty');
+      }
+
+      return blob;
+    } catch (error) {
+      // Log detailed error and re-throw with context
+      console.error('Mastering error details:', {
+        fileName: file?.name,
+        fileSize: file?.size,
+        fileType: file?.type,
+        error: error
+      });
+      throw error;
+    }
   }
 
   /**
