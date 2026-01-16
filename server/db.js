@@ -77,6 +77,41 @@ db.exec(`
     created_at TEXT NOT NULL,
     FOREIGN KEY(region_id) REFERENCES regions(id)
   );
+
+  -- Rate limiting: track recent actions per device
+  CREATE TABLE IF NOT EXISTS rate_limits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_rate_limits_device_action
+    ON rate_limits(device_id, action_type, created_at);
+
+  -- Device reputation tracking
+  CREATE TABLE IF NOT EXISTS device_reputation (
+    device_id TEXT PRIMARY KEY,
+    total_reports INTEGER NOT NULL DEFAULT 0,
+    confirmed_reports INTEGER NOT NULL DEFAULT 0,
+    disputed_reports INTEGER NOT NULL DEFAULT 0,
+    total_confirmations_given INTEGER NOT NULL DEFAULT 0,
+    accuracy_score REAL NOT NULL DEFAULT 0.5,
+    trust_level TEXT NOT NULL DEFAULT 'new',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  -- Track disputes/flags on price reports
+  CREATE TABLE IF NOT EXISTS price_report_disputes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_id INTEGER NOT NULL,
+    device_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(report_id, device_id),
+    FOREIGN KEY(report_id) REFERENCES price_reports(id)
+  );
 `);
 
 const seedDatabase = () => {
