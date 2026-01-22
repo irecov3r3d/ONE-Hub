@@ -40,6 +40,20 @@ Use this to decide which sections you enable below.
 
 ---
 
+## ✅ Your Studio Profile (Applied)
+
+Based on your preferences:
+
+- **Aesthetic**: minimalist, dark
+- **Workflow**: music + video
+- **Hardware**: regular laptop with upgraded RAM
+- **Desktop**: bare‑minimum KDE‑like environment
+- **Core apps**: ONE‑Hub, Beat Analyzer, Beatpack Analyzer, Beat Maker, Song Generator Vault, Lil Gimme Leitimit, Voice Recorder
+
+This guide below assumes that profile.
+
+---
+
 ## 🧰 Core System Packages
 
 These are foundational for builds, desktop stability, and audio playback:
@@ -100,6 +114,18 @@ If you want, I can map your layout and shortcuts for any of these.
 
 ---
 
+## 🖤 Minimalist Dark KDE Setup (Recommended for You)
+
+Goal: clean, dark, fast, and distraction‑free.
+
+1. **Theme**: Breeze Dark (built-in) or “Nordic” (optional)
+2. **Panel**: single top panel with app launcher, clock, and tray only
+3. **Dock**: optional; keep it hidden or remove
+4. **Workspace count**: 3 (Music, Video, Build)
+5. **Fonts**: Inter (UI) + JetBrains Mono (terminal)
+
+---
+
 ## 🎚️ Studio Audio Stack (Optional but Recommended)
 
 Choose your audio layer:
@@ -124,9 +150,9 @@ sudo apt install -y \
 ## 🧩 UX Layout Blueprint (Customize This)
 
 ### Workspace Layout
-- **Workspace 1**: ONE‑Hub / dev
-- **Workspace 2**: Audio tools / DAW
-- **Workspace 3**: Research / docs
+- **Workspace 1**: ONE‑Hub / Build
+- **Workspace 2**: Music tools
+- **Workspace 3**: Video tools
 
 ### Panel / Dock
 - Single top panel (clean)
@@ -195,6 +221,22 @@ sudo apt install -y \
   gimp \
   inkscape
 ```
+
+---
+
+## 🎛️ Your Studio App Stack (Install Targets)
+
+Placeholders for your core tools (install paths depend on where you source them):
+
+- **ONE‑Hub** (this repo)
+- **Beat Analyzer**
+- **Beatpack Analyzer**
+- **Beat Maker**
+- **Song Generator Vault**
+- **Lil Gimme Leitimit**
+- **Voice Recorder**
+
+If you want, give me install sources (AppImage, Flatpak, .deb, GitHub) and I’ll wire this into a one‑command bootstrap.
 
 ---
 
