@@ -11,6 +11,21 @@ This is a **studio-grade desktop blueprint** you can shape into *your* ideal env
 
 ---
 
+## 🧱 What We Need to Build This Studio
+
+Minimum practical baseline:
+
+- **CPU**: 4 cores (8+ recommended)
+- **RAM**: 16 GB (32 GB recommended for heavy audio + builds)
+- **Storage**: 100 GB free (SSD strongly recommended)
+- **GPU**: Optional (useful for creative apps, not required for ONE‑Hub)
+- **Audio**: Built‑in is fine; dedicated audio interface if doing studio work
+- **Displays**: 1080p minimum; dual‑monitor recommended
+
+You can scale this up or down based on how intense your audio and build workloads are.
+
+---
+
 ## 🎯 Design Goals (Customize These)
 
 Pick your priorities before installing anything:
