@@ -90,6 +90,9 @@ A comprehensive, Suno-inspired web application for creating AI-powered music. Ge
 
 ## 🚀 Getting Started
 
+### 🐧 Linux Mint Desktop Environment
+See [LINUX_MINT_ENVIRONMENT.md](LINUX_MINT_ENVIRONMENT.md) for a Linux Mint desktop setup tailored to building and running ONE-Hub locally.
+
 ### Prerequisites
 - Node.js 18+ installed
 - npm or yarn package manager
