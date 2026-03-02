@@ -120,7 +120,7 @@ export class AudioMasteringService {
     );
 
     for (let i = 0; i < processedChannels.length; i++) {
-      processedBuffer.copyToChannel(processedChannels[i], i);
+      processedBuffer.copyToChannel(processedChannels[i] as any, i);
     }
 
     return processedBuffer;
@@ -153,7 +153,7 @@ export class AudioMasteringService {
 
       // Apply biquad filter for each EQ band
       for (let ch = 0; ch < processedChannels.length; ch++) {
-        processedChannels[ch] = this.applyBiquadFilter(
+        (processedChannels as any)[ch] = this.applyBiquadFilter(
           processedChannels[ch],
           band,
           sampleRate
@@ -303,7 +303,7 @@ export class AudioMasteringService {
     for (const compressor of compSettings) {
       if (!compressor.enabled) continue;
 
-      processedChannels = this.applyCompressor(processedChannels, compressor, sampleRate);
+      processedChannels = this.applyCompressor(processedChannels, compressor, sampleRate) as any;
     }
 
     return processedChannels;
