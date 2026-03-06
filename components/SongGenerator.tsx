@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
-import type { Song } from '@/app/page';
+import type { Song } from '@/types';
 
 interface SongGeneratorProps {
   onSongGenerated: (song: Song) => void;

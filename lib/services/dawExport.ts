@@ -41,7 +41,7 @@ export class DAWExportService {
 
     // Limiter settings
     if (settings.limiting.enabled) {
-      xml += '<AdaptiveLimiter version="1.0">\n`;
+      xml += '<AdaptiveLimiter version="1.0">\n';
       xml += `  <OutputLevel>${settings.limiting.ceiling}</OutputLevel>\n`;
       xml += `  <GainReduction>${settings.limiting.threshold - settings.limiting.ceiling}</GainReduction>\n`;
       xml += `  <Release>${settings.limiting.release}</Release>\n`;

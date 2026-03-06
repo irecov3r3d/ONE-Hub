@@ -23,6 +23,8 @@ import {
   Wand2,
 } from 'lucide-react';
 import { deleteTrack, listTracks, saveTrack } from '@/lib/storage/trackStore';
+import SpectralAnalyzer from '@/components/SpectralAnalyzer';
+import TransportControls from '@/components/TransportControls';
 
 interface Track {
   id: string;
@@ -36,7 +38,6 @@ interface Track {
 }
 
 const emptySlots = Array.from({ length: 12 });
-const spectralBarCount = 20;
 
 export default function Home() {
   const [workspace, setWorkspace] = useState<'recording' | 'mixing'>('recording');
@@ -45,9 +46,6 @@ export default function Home() {
   const [transportState, setTransportState] = useState<'stopped' | 'playing' | 'paused'>('stopped');
   const [transportTime, setTransportTime] = useState(0);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'saving'>('idle');
-  const [spectralBars, setSpectralBars] = useState<number[]>(
-    Array.from({ length: spectralBarCount }, () => 12),
-  );
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
@@ -113,45 +111,6 @@ export default function Home() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!spectralVisible || !analyserRef.current) return;
-    let frame = 0;
-    const analyser = analyserRef.current;
-    const data = new Uint8Array(analyser.frequencyBinCount);
-
-    const updateBars = () => {
-      analyser.getByteFrequencyData(data);
-      const bucketSize = Math.floor(data.length / spectralBarCount);
-      const nextBars = Array.from({ length: spectralBarCount }, (_, index) => {
-        const start = index * bucketSize;
-        const end = start + bucketSize;
-        let sum = 0;
-        for (let i = start; i < end; i += 1) {
-          sum += data[i];
-        }
-        return Math.max(6, Math.round((sum / bucketSize / 255) * 100));
-      });
-      setSpectralBars(nextBars);
-      frame = requestAnimationFrame(updateBars);
-    };
-
-    updateBars();
-    return () => cancelAnimationFrame(frame);
-  }, [spectralVisible]);
-
-  useEffect(() => {
-    if (transportState !== 'playing') return;
-    let frame = 0;
-    const updateTransport = () => {
-      const firstNode = trackNodesRef.current.values().next().value;
-      if (firstNode) {
-        setTransportTime(firstNode.audio.currentTime);
-      }
-      frame = requestAnimationFrame(updateTransport);
-    };
-    updateTransport();
-    return () => cancelAnimationFrame(frame);
-  }, [transportState]);
 
   const ensureAudioContext = () => {
     if (audioContextRef.current) return audioContextRef.current;
@@ -275,7 +234,9 @@ export default function Home() {
   };
 
   const handleFastForward = () => {
-    const nextTime = Math.min(sessionDuration, transportTime + 5);
+    const firstNode = trackNodesRef.current.values().next().value;
+    const currentTime = firstNode ? firstNode.audio.currentTime : transportTime;
+    const nextTime = Math.min(sessionDuration, currentTime + 5);
     setTransportTime(nextTime);
     trackNodesRef.current.forEach(node => {
       node.audio.currentTime = nextTime;
@@ -431,20 +392,13 @@ export default function Home() {
               <FastForward className="w-4 h-4" />
               Fast Forward
             </button>
-            <div className="flex items-center gap-3 px-4 py-2 rounded-lg bg-white/10 text-sm">
-              <AudioWaveform className="w-4 h-4 text-purple-300" />
-              <span className="text-gray-300">Scrub Wheel</span>
-              <input
-                type="range"
-                min={0}
-                max={sessionDuration || 0}
-                step={0.01}
-                value={transportTime}
-                onChange={event => handleScrub(Number(event.target.value))}
-                disabled={sessionDuration === 0}
-                className="w-24 accent-purple-400"
-              />
-            </div>
+            <TransportControls
+              transportState={transportState}
+              sessionDuration={sessionDuration}
+              onScrub={handleScrub}
+              getAudioNodes={() => trackNodesRef.current}
+              initialTime={transportTime}
+            />
             <button
               onClick={() => setSpectralVisible(prev => !prev)}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm"
@@ -867,24 +821,7 @@ export default function Home() {
           )}
 
           {spectralVisible && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">Spectral Analysis</h3>
-                <SlidersHorizontal className="w-5 h-5 text-purple-300" />
-              </div>
-              <div className="flex items-end gap-2 h-32">
-                {spectralBars.map((height, index) => (
-                  <div
-                    key={index}
-                    style={{ height: `${height}%` }}
-                    className="flex-1 rounded-full bg-gradient-to-t from-purple-600/80 to-pink-400/40"
-                  />
-                ))}
-              </div>
-              <p className="mt-3 text-xs text-gray-400">
-                Toggle spectral view on demand to keep the main workspace focused.
-              </p>
-            </div>
+            <SpectralAnalyzer analyserNode={analyserRef.current} />
           )}
         </aside>
       </div>

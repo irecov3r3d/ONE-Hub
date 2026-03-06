@@ -120,7 +120,7 @@ export class AudioMasteringService {
     );
 
     for (let i = 0; i < processedChannels.length; i++) {
-      processedBuffer.copyToChannel(processedChannels[i], i);
+      processedBuffer.copyToChannel(processedChannels[i] as any, i);
     }
 
     return processedBuffer;
@@ -153,11 +153,12 @@ export class AudioMasteringService {
 
       // Apply biquad filter for each EQ band
       for (let ch = 0; ch < processedChannels.length; ch++) {
-        processedChannels[ch] = this.applyBiquadFilter(
-          processedChannels[ch],
+        const filtered = this.applyBiquadFilter(
+          processedChannels[ch] as any,
           band,
           sampleRate
         );
+        processedChannels[ch] = new Float32Array(filtered);
       }
     }
 
@@ -303,7 +304,8 @@ export class AudioMasteringService {
     for (const compressor of compSettings) {
       if (!compressor.enabled) continue;
 
-      processedChannels = this.applyCompressor(processedChannels, compressor, sampleRate);
+      const result = this.applyCompressor(processedChannels as any, compressor, sampleRate);
+      processedChannels = result.map(ch => new Float32Array(ch));
     }
 
     return processedChannels;
@@ -499,8 +501,7 @@ export class AudioMasteringService {
       const output = new Float32Array(channel.length);
 
       for (let i = 0; i < channel.length; i++) {
-        const input = channel[i];
-        let saturated = input;
+        const input = channel[i]; let saturated = input;
 
         switch (settings.type) {
           case 'tape':
@@ -806,7 +807,7 @@ export class AudioMasteringService {
           frequency: eqSugg.frequency,
           gain: eqSugg.gain,
           q: eqSugg.q,
-          type: eqSugg.type,
+          type: eqSugg.type as any,
         });
       }
     }
