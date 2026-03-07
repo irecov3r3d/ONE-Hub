@@ -48,11 +48,23 @@ export default function Home() {
   const [selectedIngredientId, setSelectedIngredientId] = useState<number | null>(null);
   const [selectedFoodSourceId, setSelectedFoodSourceId] = useState<number | null>(null);
   const [priceInput, setPriceInput] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [plannerItems, setPlannerItems] = useState<
     { recipe: Recipe; quantity: number }[]
   >([]);
   const [plannerName, setPlannerName] = useState('Weekend Boil Plan');
   const [plannerStatus, setPlannerStatus] = useState<string | null>(null);
+  const [recipeSearch, setRecipeSearch] = useState('');
+  const [selectedSpiceLevel, setSelectedSpiceLevel] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' }[]>([]);
+
+  const addToast = (message: string, type: 'success' | 'error' = 'success') => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3000);
+  };
 
   const selectedIngredient = useMemo(
     () => ingredients.find(ingredient => ingredient.id === selectedIngredientId) || null,
@@ -161,31 +173,49 @@ export default function Home() {
     if (!selectedRegionId || !selectedIngredientId || !selectedFoodSourceId || !deviceId) {
       return;
     }
-    const priceValue = Number(priceInput);
-    if (!priceValue) return;
+    const priceValue = parseFloat(priceInput);
+    if (isNaN(priceValue) || priceValue <= 0) {
+      addToast('Please enter a valid price greater than 0.', 'error');
+      return;
+    }
 
-    await fetchJson('/api/price-reports', {
-      method: 'POST',
-      body: JSON.stringify({
-        ingredient_id: selectedIngredientId,
-        food_source_id: selectedFoodSourceId,
-        region_id: selectedRegionId,
-        price: priceValue,
-        unit: selectedIngredient?.unit || 'lb',
-        reported_by: deviceId,
-      }),
-    });
+    setIsSubmittingReport(true);
+    try {
+      await fetchJson('/api/price-reports', {
+        method: 'POST',
+        body: JSON.stringify({
+          ingredient_id: selectedIngredientId,
+          food_source_id: selectedFoodSourceId,
+          region_id: selectedRegionId,
+          price: priceValue,
+          unit: selectedIngredient?.unit || 'lb',
+          reported_by: deviceId,
+        }),
+      });
 
-    setPriceInput('');
-    setPlannerStatus(null);
+      setPriceInput('');
+      setPlannerStatus(null);
+      addToast('Price reported successfully!');
+    } catch (error) {
+      console.error(error);
+      addToast('Failed to report price.', 'error');
+    } finally {
+      setIsSubmittingReport(false);
+    }
   };
 
   const handleConfirm = async (reportId: number) => {
     if (!deviceId) return;
-    await fetchJson(`/api/price-reports/${reportId}/confirm`, {
-      method: 'POST',
-      body: JSON.stringify({ device_id: deviceId }),
-    });
+    try {
+      await fetchJson(`/api/price-reports/${reportId}/confirm`, {
+        method: 'POST',
+        body: JSON.stringify({ device_id: deviceId }),
+      });
+      addToast('Price confirmed!');
+    } catch (error) {
+      console.error(error);
+      addToast('Failed to confirm price.', 'error');
+    }
   };
 
   const addRecipeToPlan = (recipe: Recipe) => {
@@ -209,6 +239,16 @@ export default function Home() {
   const removePlannerItem = (recipeId: number) => {
     setPlannerItems(prev => prev.filter(item => item.recipe.id !== recipeId));
   };
+
+  const filteredRecipes = useMemo(() => {
+    return recipes.filter(recipe => {
+      const matchesSearch =
+        recipe.name.toLowerCase().includes(recipeSearch.toLowerCase()) ||
+        recipe.instructions.toLowerCase().includes(recipeSearch.toLowerCase());
+      const matchesSpice = !selectedSpiceLevel || recipe.spice_level === selectedSpiceLevel;
+      return matchesSearch && matchesSpice;
+    });
+  }, [recipes, recipeSearch, selectedSpiceLevel]);
 
   const plannerTotalCost = useMemo(() => {
     if (!bestPrice) return null;
@@ -239,10 +279,26 @@ export default function Home() {
       }),
     });
     setPlannerStatus('Cook plan saved!');
+    addToast('Cook plan saved!');
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
+    <main className="min-h-screen bg-slate-950 text-white relative">
+      <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none">
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            className={`pointer-events-auto min-w-[240px] rounded-xl border px-4 py-3 shadow-2xl transition-all duration-300 animate-in slide-in-from-right ${
+              toast.type === 'success'
+                ? 'border-emerald-500/50 bg-slate-900 text-emerald-300'
+                : 'border-rose-500/50 bg-slate-900 text-rose-300'
+            }`}
+          >
+            <p className="text-sm font-medium">{toast.message}</p>
+          </div>
+        ))}
+      </div>
+
       <header className="border-b border-white/10 bg-slate-950/80 backdrop-blur sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col gap-4">
           <div className="flex items-center justify-between flex-wrap gap-4">
@@ -400,9 +456,10 @@ export default function Home() {
               </div>
               <button
                 onClick={handleReportSubmit}
-                className="w-full rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+                disabled={isSubmittingReport}
+                className="w-full rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Submit report
+                {isSubmittingReport ? 'Submitting...' : 'Submit report'}
               </button>
               <p className="text-xs text-slate-500">
                 Reports expire after 48 hours. Newer reports push older ones down.
@@ -484,14 +541,42 @@ export default function Home() {
 
       <section className="max-w-6xl mx-auto px-6 pb-16">
         <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <h2 className="text-xl font-semibold">Recipe browser</h2>
-            <p className="text-sm text-slate-400">
-              Tap a recipe to add it to your cook plan.
-            </p>
+          <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
+            <div>
+              <h2 className="text-xl font-semibold">Recipe browser</h2>
+              <p className="text-sm text-slate-400">
+                Tap a recipe to add it to your cook plan.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search recipes..."
+                  value={recipeSearch}
+                  onChange={e => setRecipeSearch(e.target.value)}
+                  className="rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm w-64 focus:border-emerald-500 outline-none"
+                />
+              </div>
+              <div className="flex gap-2">
+                {['mild', 'medium', 'hot'].map(level => (
+                  <button
+                    key={level}
+                    onClick={() => setSelectedSpiceLevel(selectedSpiceLevel === level ? null : level)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize border transition-colors ${
+                      selectedSpiceLevel === level
+                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200'
+                        : 'bg-slate-950 border-slate-700 text-slate-400 hover:border-slate-500'
+                    }`}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {recipes.map(recipe => (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {filteredRecipes.map(recipe => (
               <button
                 key={recipe.id}
                 onClick={() => addRecipeToPlan(recipe)}
@@ -512,8 +597,10 @@ export default function Home() {
                 </div>
               </button>
             ))}
-            {recipes.length === 0 && (
-              <p className="text-sm text-slate-400">No recipes loaded yet.</p>
+            {filteredRecipes.length === 0 && (
+              <p className="text-sm text-slate-400 py-8 text-center col-span-full">
+                {recipes.length === 0 ? 'No recipes loaded yet.' : 'No recipes match your search/filters.'}
+              </p>
             )}
           </div>
         </div>

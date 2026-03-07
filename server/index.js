@@ -24,7 +24,7 @@ const broadcast = message => {
 const expireOldReports = () => {
   const cutoff = new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString();
   db.prepare(
-    'UPDATE price_reports SET status = "expired" WHERE status = "active" AND created_at < ?'
+    "UPDATE price_reports SET status = 'expired' WHERE status = 'active' AND created_at < ?"
   ).run(cutoff);
 };
 
@@ -154,8 +154,12 @@ app.get('/api/best-price', (req, res) => {
 
 app.post('/api/price-reports', (req, res) => {
   const { ingredient_id, food_source_id, region_id, price, unit, reported_by } = req.body;
-  if (!ingredient_id || !food_source_id || !region_id || !price || !unit || !reported_by) {
+  if (!ingredient_id || !food_source_id || !region_id || price === undefined || !unit || !reported_by) {
     return res.status(400).json({ error: 'Missing required fields' });
+  }
+  const priceValue = parseFloat(price);
+  if (isNaN(priceValue) || priceValue <= 0) {
+    return res.status(400).json({ error: 'Price must be a positive number' });
   }
   const createdAt = new Date().toISOString();
   const insert = db.prepare(
