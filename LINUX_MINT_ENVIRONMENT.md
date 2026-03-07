@@ -114,6 +114,61 @@ Think “voice‑first control layer” that can **scan, click, type, and record
 
 ---
 
+## 🚀 12 Proposed Upgrades (Next Iteration)
+
+1. **Workspace Zoom Engine**: smooth zoom-in/out transitions between the 4 workspaces and their module stacks.
+2. **Voice Command Router**: intent-to-action mapping with confirmation logic and a “silent mode” toggle.
+3. **Module Chain Builder**: drag/voice‑assemble module pipelines (e.g., Generator → Analyzer → Master).
+4. **Live Audio Ingest**: low‑latency mic/line input with input monitoring and routing to Generator.
+5. **Branch + Module Switcher**: sidebar that maps repo branches to UI shells for fast swapping.
+6. **Workspace Hotkey Layers**: per‑workspace shortcut maps with on‑screen overlays.
+7. **Session Snapshots**: save/restore full workspace layouts and module states.
+8. **Unified Search + Launch**: quick search for modules, presets, files, and commands.
+9. **Auto‑Assist Panels**: context hints and recommended next steps based on active module.
+10. **Voice Macro Packs**: user‑defined voice macros (e.g., “prep mixdown”).
+11. **Latency & CPU Meter**: live perf HUD for audio/visual workloads.
+12. **Offline Mode Profiles**: reduce CPU usage and disable heavy services when offline.
+
+---
+
+## 🧠 DECMM Engine (Demographic Content Evolution & Monetization Maximizer)
+
+Use this engine as the **content + monetization governor** for ONE‑Hub’s workspace system. It continuously evolves the studio UX and monetization strategy using demographic evaluations and iteration loops.
+
+**Core role**
+- Ethics‑bound, multi‑demographic content evolution engine for ONE‑Hub.
+- Loop on “y” to iterate and expand.
+
+**Demographic pool (15)**
+Clinician, Educator, Accessibility, Low‑Resource, Youth, Elder, Technical, Domain Expert, Legal/Ethics, Business, Artist, End‑User, Investor, Consumer, Marketer.
+
+**Selection rules (per iteration)**
+- Select exactly **6**
+- ≥2 safety (Clinician/Accessibility/Legal‑Ethics)
+- ≥2 execution/content (Educator/Technical/Domain Expert/Artist)
+- ≥2 audience/monetization (Youth/Elder/End‑User/Investor/Consumer/Marketer)
+- Rotate across iterations to avoid repetition
+
+**Weights (sum=1.00)**
+Safety: 0.30 | Monetization Value: 0.25 | Content Expansion: 0.20 | Clarity: 0.15 | Reach: 0.10
+
+**Actions**
+ADD, MODIFY, REMOVE, PRESERVE, MONETIZE  
+Mandates: ≥30% actions expand content; ≥20% boost monetization (≥5% gain per cycle).
+
+**Output format (strict)**
+1) META  
+2) SOCRATIC BONUS (only if BONUS_MODE=True)  
+3) UPGRADE ACTIONS  
+4) UPDATED SOURCE — CANONICAL  
+5) FORKING ENGINE (2–4 branches)  
+6) CROSS‑MEDIUM TRANSLATOR (1–3)  
+7) DISTILLATION  
+8) MEMORY UPDATE SUMMARY  
+End: “Next Step — Reply ‘y’ to loop using Updated Source.”
+
+---
+
 ## 🧰 Core System Packages
 
 These are foundational for builds, desktop stability, and audio playback:
