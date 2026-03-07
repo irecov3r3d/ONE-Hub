@@ -15,6 +15,7 @@ import {
   Zap,
   Mic,
   Bot,
+  Mic,
 } from 'lucide-react';
 import SongGenerator from '@/components/SongGenerator';
 import SongLibrary from '@/components/SongLibrary';
@@ -28,6 +29,8 @@ import BeatMaker from '@/components/BeatMaker';
 import VoiceController from '@/components/VoiceController';
 import AIAssistant from '@/components/AIAssistant';
 import type { UploadedFile, ParsedCommand } from '@/types';
+import VoiceMemoRecorder from '@/components/VoiceMemoRecorder';
+import type { UploadedFile } from '@/types';
 
 export interface Song {
   id: string;
@@ -49,7 +52,8 @@ type Tab =
   | 'stems'
   | 'albumart'
   | 'export'
-  | 'library';
+  | 'library'
+  | 'voice';
 
 export default function Home() {
   const [songs, setSongs] = useState<Song[]>([]);
@@ -102,6 +106,7 @@ export default function Home() {
     { id: 'albumart' as Tab, label: 'Album Art', icon: ImageIcon },
     { id: 'export' as Tab, label: 'Export', icon: Download },
     { id: 'library' as Tab, label: 'Library', icon: Library },
+    { id: 'voice' as Tab, label: 'Voice Memo', icon: Mic },
   ];
 
   return (
@@ -401,6 +406,13 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {/* Voice Memo Tab */}
+        {activeTab === 'voice' && (
+          <div className="max-w-6xl mx-auto">
+            <VoiceMemoRecorder />
+          </div>
+        )}
       </div>
 
       {/* Footer */}
