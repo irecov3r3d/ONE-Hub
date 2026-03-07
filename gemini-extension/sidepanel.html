@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini Sidebar Assistant</title>
+  <link rel="stylesheet" href="styles/sidepanel.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Gemini Assistant</h1>
+      <button id="clearChat" title="Clear Chat">🗑️</button>
+    </header>
+
+    <div class="tabs-control">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+        <h3 style="margin: 0;">Active Tab Group</h3>
+        <label style="font-size: 0.75rem;"><input type="checkbox" id="autoContext"> Auto-Context</label>
+      </div>
+      <div id="tabList" class="tab-list">
+        <!-- Tab items with checkboxes will go here -->
+      </div>
+      <div class="control-btns">
+        <button id="refreshTabs">Refresh Group</button>
+        <button id="feedSelectedTabs">Feed Selected Tabs</button>
+      </div>
+    </div>
+
+    <div id="chatHistory" class="chat-history">
+      <div class="message system">
+        Welcome! Use the sidebar for summarizing, rewriting, or just chatting. I can also interact with tabs in your current group.
+      </div>
+    </div>
+
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <span>Gemini is thinking...</span>
+    </div>
+
+    <div id="imagePreview" class="image-preview hidden">
+      <img id="previewImg" src="" alt="Snapshot Preview">
+      <button id="removeImage">X</button>
+    </div>
+
+    <div class="input-area">
+      <textarea id="userInput" placeholder="Ask Gemini something... (Shift+Enter for new line)"></textarea>
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+
+  <script src="scripts/sidepanel.js"></script>
+</body>
+</html>
