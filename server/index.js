@@ -153,7 +153,7 @@ app.get('/api/best-price', (req, res) => {
 });
 
 app.post('/api/price-reports', (req, res) => {
-  const { ingredient_id, food_source_id, region_id, price, unit, reported_by } = req.body;
+  const { ingredient_id, food_source_id, region_id, price, unit, reported_by, image_data } = req.body;
   if (!ingredient_id || !food_source_id || !region_id || price === undefined || !unit || !reported_by) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
@@ -164,8 +164,8 @@ app.post('/api/price-reports', (req, res) => {
   const createdAt = new Date().toISOString();
   const insert = db.prepare(
     `INSERT INTO price_reports
-      (ingredient_id, food_source_id, region_id, price, unit, reported_by, created_at, confirmations, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (ingredient_id, food_source_id, region_id, price, unit, reported_by, created_at, confirmations, status, image_data)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = insert.run(
     ingredient_id,
@@ -176,7 +176,8 @@ app.post('/api/price-reports', (req, res) => {
     reported_by,
     createdAt,
     0,
-    'active'
+    'active',
+    image_data || null
   );
   const report = db
     .prepare(

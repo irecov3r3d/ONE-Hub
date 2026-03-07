@@ -48,12 +48,12 @@ export default function Home() {
   const [selectedIngredientId, setSelectedIngredientId] = useState<number | null>(null);
   const [selectedFoodSourceId, setSelectedFoodSourceId] = useState<number | null>(null);
   const [priceInput, setPriceInput] = useState('');
+  const [imageInput, setImageInput] = useState<string | null>(null);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [plannerItems, setPlannerItems] = useState<
     { recipe: Recipe; quantity: number }[]
   >([]);
   const [plannerName, setPlannerName] = useState('Weekend Boil Plan');
-  const [plannerStatus, setPlannerStatus] = useState<string | null>(null);
   const [recipeSearch, setRecipeSearch] = useState('');
   const [selectedSpiceLevel, setSelectedSpiceLevel] = useState<string | null>(null);
   const [toasts, setToasts] = useState<{ id: string; message: string; type: 'success' | 'error' }[]>([]);
@@ -89,23 +89,25 @@ export default function Home() {
 
   useEffect(() => {
     const loadBase = async () => {
-      const [regionData, ingredientData] = await Promise.all([
-        fetchJson<Region[]>('/api/regions'),
-        fetchJson<Ingredient[]>('/api/ingredients'),
-      ]);
-      setRegions(regionData);
-      setIngredients(ingredientData);
-      if (regionData.length > 0) {
-        setSelectedRegionId(regionData[0].id);
-      }
-      if (ingredientData.length > 0) {
-        setSelectedIngredientId(ingredientData[0].id);
+      try {
+        const [regionData, ingredientData] = await Promise.all([
+          fetchJson<Region[]>('/api/regions'),
+          fetchJson<Ingredient[]>('/api/ingredients'),
+        ]);
+        setRegions(regionData);
+        setIngredients(ingredientData);
+        if (regionData.length > 0) {
+          setSelectedRegionId(regionData[0].id);
+        }
+        if (ingredientData.length > 0) {
+          setSelectedIngredientId(ingredientData[0].id);
+        }
+      } catch (error) {
+        console.error('Failed to load base data', error);
       }
     };
 
-    loadBase().catch(error => {
-      console.error('Failed to load base data', error);
-    });
+    loadBase();
   }, []);
 
   const refreshFoodSources = async (regionId: number) => {
@@ -190,17 +192,33 @@ export default function Home() {
           price: priceValue,
           unit: selectedIngredient?.unit || 'lb',
           reported_by: deviceId,
+          image_data: imageInput,
         }),
       });
 
       setPriceInput('');
-      setPlannerStatus(null);
+      setImageInput(null);
       addToast('Price reported successfully!');
     } catch (error) {
       console.error(error);
       addToast('Failed to report price.', 'error');
     } finally {
       setIsSubmittingReport(false);
+    }
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        addToast('Image too large. Please use a file under 2MB.', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageInput(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -225,7 +243,6 @@ export default function Home() {
       }
       return [...prev, { recipe, quantity: recipe.servings }];
     });
-    setPlannerStatus(null);
   };
 
   const updatePlannerQuantity = (recipeId: number, quantity: number) => {
@@ -252,10 +269,10 @@ export default function Home() {
 
   const plannerTotalCost = useMemo(() => {
     if (!bestPrice) return null;
-    return plannerItems.reduce(
-      (total, item) => total + item.quantity * bestPrice.price,
-      0
-    );
+    return plannerItems.reduce((total, item) => {
+      const lbsPerPerson = item.recipe.name.toLowerCase().includes('boil') ? 3 : 0.5;
+      return total + (item.quantity * lbsPerPerson) * bestPrice.price;
+    }, 0);
   }, [plannerItems, bestPrice]);
 
   const handleSavePlanner = async () => {
@@ -278,7 +295,6 @@ export default function Home() {
         created_by: deviceId,
       }),
     });
-    setPlannerStatus('Cook plan saved!');
     addToast('Cook plan saved!');
   };
 
@@ -360,27 +376,84 @@ export default function Home() {
       <section className="max-w-6xl mx-auto px-6 py-8 grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-8">
           <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
-            <h2 className="text-xl font-semibold mb-4">Best price near you</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold">Best price near you</h2>
+              {selectedRegion && (
+                <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-950 px-3 py-1.5 rounded-full border border-slate-800">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Live in {selectedRegion.name}
+                </div>
+              )}
+            </div>
             {bestPrice ? (
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="rounded-xl bg-slate-950/70 p-4">
+              <div className="grid gap-6 md:grid-cols-[1fr_2fr]">
+                <div className="relative aspect-square rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden group">
+                  <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-3 h-3 rounded-full bg-indigo-500/50 blur-sm animate-ping" />
+                    <div className="w-2 h-2 rounded-full bg-indigo-400 z-10" />
+                  </div>
+                  {priceReports.map(report => {
+                    const angle = (report.id * 137.5) % 360;
+                    const dist = (report.distance_km / (selectedRegion?.radius_km || 25)) * 100;
+                    const x = 50 + (dist * Math.cos((angle * Math.PI) / 180)) / 2;
+                    const y = 50 + (dist * Math.sin((angle * Math.PI) / 180)) / 2;
+                    const isBest = bestPrice?.id === report.id;
+
+                    return (
+                      <div
+                        key={report.id}
+                        className={`absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 transition-all cursor-help ${
+                          isBest
+                            ? 'bg-emerald-500 border-white scale-125 z-20 shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+                            : 'bg-slate-700 border-slate-600 z-10 hover:bg-slate-500'
+                        }`}
+                        style={{ left: `${x}%`, top: `${y}%` }}
+                        title={`${report.food_source_name}: ${formatCurrency(report.price)}`}
+                      />
+                    );
+                  })}
+                  <div className="absolute bottom-3 left-3 flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <span className="text-[10px] text-slate-400 uppercase tracking-tighter">Best Price</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-slate-700" />
+                      <span className="text-[10px] text-slate-400 uppercase tracking-tighter">Local Vendors</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-xl bg-slate-950/70 p-4 border border-white/5">
                   <p className="text-sm text-slate-400">Vendor</p>
                   <p className="text-lg font-semibold">{bestPrice.food_source_name}</p>
                   <p className="text-xs text-slate-500">
                     {bestPrice.distance_km} km away
                   </p>
                 </div>
-                <div className="rounded-xl bg-slate-950/70 p-4">
-                  <p className="text-sm text-slate-400">Price</p>
-                  <p className="text-2xl font-semibold text-emerald-300">
-                    {formatCurrency(bestPrice.price)} / {bestPrice.unit}
-                  </p>
-                  <p className="text-xs text-slate-500">Score {bestPrice.score}</p>
-                </div>
-                <div className="rounded-xl bg-slate-950/70 p-4">
-                  <p className="text-sm text-slate-400">Confirmations</p>
-                  <p className="text-2xl font-semibold">{bestPrice.confirmations}</p>
-                  <p className="text-xs text-slate-500">Most-confirmed wins</p>
+                  <div className="rounded-xl bg-slate-950/70 p-4 border border-white/5 sm:col-span-2 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-slate-400">Price</p>
+                      <p className="text-3xl font-bold text-emerald-300">
+                        {formatCurrency(bestPrice.price)} / {bestPrice.unit}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-slate-400">Confirmations</p>
+                      <p className="text-2xl font-semibold">{bestPrice.confirmations}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-slate-950/70 p-4 border border-white/5">
+                    <p className="text-sm text-slate-400">Quality Score</p>
+                    <p className="text-xl font-semibold text-indigo-300">{bestPrice.score}</p>
+                    <p className="text-[10px] text-slate-500 uppercase mt-1">Weighted by reliability</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-950/70 p-4 border border-white/5">
+                    <p className="text-sm text-slate-400">Vendor</p>
+                    <p className="text-xl font-semibold">{bestPrice.food_source_name}</p>
+                    <p className="text-[10px] text-slate-500 uppercase mt-1">{bestPrice.distance_km} km away</p>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -396,14 +469,32 @@ export default function Home() {
                   key={report.id}
                   className="flex flex-col gap-3 rounded-xl bg-slate-950/70 p-4 md:flex-row md:items-center md:justify-between"
                 >
-                  <div>
-                    <p className="text-sm text-slate-400">{report.food_source_name}</p>
-                    <p className="text-lg font-semibold">
-                      {formatCurrency(report.price)} / {report.unit}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {report.distance_km} km • {formatRelativeTime(report.created_at)}
-                    </p>
+                  <div className="flex gap-4">
+                    {report.image_data && (
+                      <div className="w-16 h-16 rounded-lg bg-slate-800 flex-shrink-0 overflow-hidden border border-emerald-500/30">
+                        <img
+                          src={report.image_data}
+                          alt="Verification"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-slate-400">{report.food_source_name}</p>
+                        {report.image_data && (
+                          <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20 uppercase font-bold tracking-tighter">
+                            Verified
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-lg font-semibold">
+                        {formatCurrency(report.price)} / {report.unit}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {report.distance_km} km • {formatRelativeTime(report.created_at)}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-sm text-slate-300">
@@ -451,8 +542,34 @@ export default function Home() {
                   value={priceInput}
                   onChange={event => setPriceInput(event.target.value)}
                   placeholder="4.25"
-                  className="mt-2 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm"
+                  className="mt-2 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm focus:border-emerald-500 outline-none"
                 />
+              </div>
+              <div>
+                <label className="text-sm text-slate-300">Photo Verification (Optional)</label>
+                <div className="mt-2 flex items-center gap-4">
+                  <label className="flex-1 cursor-pointer">
+                    <div className={`h-20 rounded-xl border-2 border-dashed flex flex-col items-center justify-center transition-colors ${imageInput ? 'border-emerald-500 bg-emerald-500/10' : 'border-slate-700 hover:border-slate-500 bg-slate-900'}`}>
+                      <span className="text-xs font-semibold text-slate-400">
+                        {imageInput ? '✓ Photo selected' : 'Upload photo'}
+                      </span>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="hidden"
+                    />
+                  </label>
+                  {imageInput && (
+                    <button
+                      onClick={() => setImageInput(null)}
+                      className="text-xs text-rose-400 hover:text-rose-300"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </div>
               <button
                 onClick={handleReportSubmit}
@@ -498,17 +615,25 @@ export default function Home() {
                         Remove
                       </button>
                     </div>
-                    <div className="mt-3 flex items-center justify-between">
-                      <label className="text-xs text-slate-400">Quantity ({selectedIngredient?.unit})</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={item.quantity}
-                        onChange={event =>
-                          updatePlannerQuantity(item.recipe.id, Number(event.target.value))
-                        }
-                        className="w-24 rounded-lg bg-slate-900 border border-slate-700 px-2 py-1 text-sm"
-                      />
+                    <div className="mt-3 flex items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <label className="text-[10px] uppercase tracking-wider text-slate-500 block mb-1">Guests</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={item.quantity}
+                          onChange={event =>
+                            updatePlannerQuantity(item.recipe.id, Math.max(1, Number(event.target.value)))
+                          }
+                          className="w-full rounded-lg bg-slate-950 border border-slate-800 px-2 py-1.5 text-sm focus:border-emerald-500/50 outline-none transition-colors"
+                        />
+                      </div>
+                      <div className="flex-1 text-right">
+                        <label className="text-[10px] uppercase tracking-wider text-slate-500 block mb-1">Total {selectedIngredient?.unit}</label>
+                        <p className="py-1.5 text-sm font-mono text-emerald-400">
+                          {item.quantity * (item.recipe.name.toLowerCase().includes('boil') ? 3 : 0.5)} {selectedIngredient?.unit}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -533,7 +658,6 @@ export default function Home() {
               >
                 Save cook plan
               </button>
-              {plannerStatus && <p className="text-xs text-emerald-300">{plannerStatus}</p>}
             </div>
           </div>
         </div>

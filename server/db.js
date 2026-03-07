@@ -48,6 +48,7 @@ db.exec(`
     created_at TEXT NOT NULL,
     confirmations INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'active',
+    image_data TEXT,
     FOREIGN KEY(ingredient_id) REFERENCES ingredients(id),
     FOREIGN KEY(food_source_id) REFERENCES food_sources(id),
     FOREIGN KEY(region_id) REFERENCES regions(id)
