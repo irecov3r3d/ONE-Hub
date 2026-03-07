@@ -35,6 +35,7 @@ export interface PriceReport {
   food_source_name: string;
   distance_km: number;
   score?: number;
+  image_data?: string | null;
 }
 
 export interface Recipe {

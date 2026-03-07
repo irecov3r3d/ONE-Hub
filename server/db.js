@@ -1,7 +1,13 @@
 const path = require('path');
+const fs = require('fs');
 const Database = require('better-sqlite3');
 
-const dbPath = path.join(__dirname, 'data', 'foodmarket.db');
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const dbPath = path.join(dataDir, 'foodmarket.db');
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
@@ -42,6 +48,7 @@ db.exec(`
     created_at TEXT NOT NULL,
     confirmations INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'active',
+    image_data TEXT,
     FOREIGN KEY(ingredient_id) REFERENCES ingredients(id),
     FOREIGN KEY(food_source_id) REFERENCES food_sources(id),
     FOREIGN KEY(region_id) REFERENCES regions(id)
