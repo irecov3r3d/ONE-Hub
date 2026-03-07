@@ -13,7 +13,8 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import type { GenerationResult } from '../services/api';
+import { useStore } from '../store/useStore';
+import type { GenerationResult, Song } from '../services/api';
 
 const { width, height } = Dimensions.get('window');
 const SWIPE_THRESHOLD = width * 0.25;
@@ -150,6 +151,8 @@ export default function ComparisonScreen() {
     setFavorites(newFavorites);
   };
 
+  const { addSong } = useStore();
+
   const handleSelectGeneration = () => {
     const selected = generations[currentIndex];
     Alert.alert(
@@ -160,7 +163,25 @@ export default function ComparisonScreen() {
         {
           text: 'Save',
           onPress: () => {
-            // TODO: Save to library
+            const newSong: Song = {
+              id: selected.id,
+              title: (params.title as string) || `Generated ${selected.modelName}`,
+              prompt: (params.prompt as string) || '',
+              genre: (params.genre as string) || 'Unknown',
+              mood: (params.mood as string) || 'Unknown',
+              duration: parseInt(params.duration as string) || 0,
+              audioUrl: selected.audioUrl,
+              createdAt: new Date().toISOString(),
+              metadata: {
+                model: selected.modelName,
+                qualityScore: selected.metrics.overallScore,
+                mastered: false,
+                refined: false,
+                generationTime: selected.generationTime,
+                cost: selected.cost,
+              },
+            };
+            addSong(newSong);
             router.back();
           },
         },
