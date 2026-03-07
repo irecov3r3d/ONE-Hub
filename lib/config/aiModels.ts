@@ -149,17 +149,17 @@ function adaptiveModelSelection(
   const selected: AIModelConfig[] = [];
 
   // If prompt mentions melody, structure - use MusicGen
-  if (promptLower.match(/melody|tune|catchy|song|structure/)) {
+  if (promptLower.match(/melody|tune|catchy|song|structure|rap|hip hop|vocal/)) {
     selected.push(AI_MODELS.musicgen);
   }
 
   // If prompt mentions atmosphere, ambient, texture - use AudioCraft
-  if (promptLower.match(/ambient|atmosphere|texture|soundscape|mood/)) {
+  if (promptLower.match(/ambient|atmosphere|texture|soundscape|mood|rock|guitar/)) {
     selected.push(AI_MODELS.audiocraft);
   }
 
   // If prompt mentions experimental, weird, unique - use Riffusion
-  if (promptLower.match(/experimental|weird|unique|creative|different/)) {
+  if (promptLower.match(/experimental|weird|unique|creative|different|dubstep|wobble/)) {
     selected.push(AI_MODELS.riffusion);
   }
 

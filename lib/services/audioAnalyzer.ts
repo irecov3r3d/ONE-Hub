@@ -2,6 +2,7 @@
 // Analyzes generated audio for quality metrics
 
 import type { QualityMetrics } from '@/lib/config/aiModels';
+import { FastFFTEngine } from './FastFFTEngine';
 
 export class AudioAnalyzer {
   /**
@@ -315,23 +316,15 @@ export class AudioAnalyzer {
   }
 
   /**
-   * Helper: Perform FFT analysis
-   * (Simplified - in production use a proper FFT library)
+   * Helper: Perform FFT analysis using FastFFTEngine
    */
   private static performFFT(samples: Float32Array, fftSize: number): Float32Array {
-    // This is a placeholder
-    // In production, use a proper FFT library like fft.js or Web Audio API AnalyserNode
+    // Ensure samples length is power of 2 and matches fftSize
+    const buffer = new Float32Array(fftSize);
+    buffer.set(samples.slice(0, fftSize));
 
-    const result = new Float32Array(fftSize / 2);
-
-    // Simulate frequency distribution
-    for (let i = 0; i < result.length; i++) {
-      const frequency = (i / result.length) * 22050; // Assuming 44.1kHz sample rate
-      // Typical music spectrum (more energy in lower frequencies)
-      result[i] = Math.exp(-frequency / 2000) * (Math.random() * 0.2 + 0.9);
-    }
-
-    return result;
+    const { magnitude } = FastFFTEngine.fft(buffer);
+    return magnitude;
   }
 }
 
