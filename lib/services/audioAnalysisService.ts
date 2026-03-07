@@ -1,6 +1,4 @@
-// Comprehensive Audio Analysis Service
-// Provides full spectrum analysis, BPM detection, loudness metering, and mastering suggestions
-
+import { FastFFTEngine } from './fastFFTEngine';
 import type {
   AudioAnalysisResult,
   AudioFileInfo,
@@ -31,9 +29,11 @@ import type {
 
 export class AudioAnalysisService {
   private audioContext: AudioContext;
+  private fftEngine: FastFFTEngine;
 
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    this.fftEngine = new FastFFTEngine(this.audioContext);
   }
 
   /**
@@ -286,7 +286,10 @@ export class AudioAnalysisService {
   ): Promise<FrequencyAnalysis> {
     const mono = this.convertToMono(channelData);
     const fftSize = 8192;
-    const spectrum = this.performFFT(mono, fftSize);
+
+    console.time('⚡ Bolt: performFFT');
+    const spectrum = await this.performFFT(audioBuffer, fftSize);
+    console.timeEnd('⚡ Bolt: performFFT');
 
     // Analyze frequency bands
     const sampleRate = audioBuffer.sampleRate;
@@ -326,43 +329,10 @@ export class AudioAnalysisService {
 
   /**
    * Perform FFT and return frequency spectrum
+   * ⚡ Bolt: Using FastFFTEngine for O(N log N) performance
    */
-  private performFFT(samples: Float32Array, fftSize: number): FrequencyBand[] {
-    const spectrum: FrequencyBand[] = [];
-
-    // Use middle portion of audio for analysis
-    const startSample = Math.floor(samples.length / 2) - Math.floor(fftSize / 2);
-    const windowedSamples = new Float32Array(fftSize);
-
-    // Apply Hann window
-    for (let i = 0; i < fftSize; i++) {
-      const windowValue = 0.5 * (1 - Math.cos((2 * Math.PI * i) / fftSize));
-      windowedSamples[i] = samples[startSample + i] * windowValue;
-    }
-
-    // Simple DFT (in production, use Web Audio API's AnalyserNode or FFT library)
-    for (let k = 0; k < fftSize / 2; k++) {
-      let real = 0;
-      let imag = 0;
-
-      for (let n = 0; n < fftSize; n++) {
-        const angle = (2 * Math.PI * k * n) / fftSize;
-        real += windowedSamples[n] * Math.cos(angle);
-        imag -= windowedSamples[n] * Math.sin(angle);
-      }
-
-      const magnitude = Math.sqrt(real * real + imag * imag) / fftSize;
-      const phase = Math.atan2(imag, real);
-      const magnitudeDB = magnitude > 0 ? 20 * Math.log10(magnitude) : -100;
-
-      spectrum.push({
-        frequency: k,
-        magnitude: magnitudeDB,
-        phase,
-      });
-    }
-
-    return spectrum;
+  private async performFFT(audioBuffer: AudioBuffer, fftSize: number): Promise<FrequencyBand[]> {
+    return this.fftEngine.performFFT(audioBuffer, fftSize);
   }
 
   /**
@@ -974,9 +944,8 @@ export class AudioAnalysisService {
     audioBuffer: AudioBuffer,
     channelData: Float32Array[]
   ): Promise<HarmonicAnalysis> {
-    const mono = this.convertToMono(channelData);
     const fftSize = 8192;
-    const spectrum = this.performFFT(mono, fftSize);
+    const spectrum = await this.performFFT(audioBuffer, fftSize);
 
     // Find fundamental frequency
     const fundamentalFreq = this.findFundamentalFrequency(spectrum, audioBuffer.sampleRate, fftSize);
@@ -1110,16 +1079,15 @@ export class AudioAnalysisService {
     audioBuffer: AudioBuffer,
     channelData: Float32Array[]
   ): Promise<SpectralData> {
-    const mono = this.convertToMono(channelData);
     const fftSize = 2048;
     const hopSize = fftSize / 4;
     const sampleRate = audioBuffer.sampleRate;
 
     // Generate spectrogram
-    const spectrogram = this.generateSpectrogram(mono, fftSize, hopSize, sampleRate);
+    const spectrogram = await this.generateSpectrogram(audioBuffer, fftSize, hopSize);
 
     // Generate frequency bins (sample from middle of audio)
-    const spectrum = this.performFFT(mono, fftSize);
+    const spectrum = await this.performFFT(audioBuffer, fftSize);
     const frequencyBins = spectrum.map((band, i) => ({
       frequency: (i * sampleRate) / fftSize,
       magnitude: band.magnitude,
@@ -1140,35 +1108,14 @@ export class AudioAnalysisService {
 
   /**
    * Generate spectrogram
+   * ⚡ Bolt: Using FastFFTEngine for optimized time-frequency analysis
    */
-  private generateSpectrogram(
-    samples: Float32Array,
+  private async generateSpectrogram(
+    audioBuffer: AudioBuffer,
     fftSize: number,
-    hopSize: number,
-    sampleRate: number
-  ): SpectrogramData {
-    const times: number[] = [];
-    const frequencies: number[] = [];
-    const magnitudes: number[][] = [];
-
-    // Generate frequency axis
-    for (let i = 0; i < fftSize / 2; i++) {
-      frequencies.push((i * sampleRate) / fftSize);
-    }
-
-    // Process each frame
-    const numFrames = Math.floor((samples.length - fftSize) / hopSize);
-    for (let frame = 0; frame < Math.min(numFrames, 100); frame++) {
-      const time = (frame * hopSize) / sampleRate;
-      times.push(time);
-
-      const frameData = samples.slice(frame * hopSize, frame * hopSize + fftSize);
-      const spectrum = this.performFFT(frameData, fftSize);
-
-      magnitudes.push(spectrum.map(band => band.magnitude));
-    }
-
-    return { times, frequencies, magnitudes };
+    hopSize: number
+  ): Promise<SpectrogramData> {
+    return this.fftEngine.calculateSpectrogram(audioBuffer, fftSize, hopSize);
   }
 
   /**
