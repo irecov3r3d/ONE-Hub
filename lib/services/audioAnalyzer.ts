@@ -14,11 +14,12 @@ export class AudioAnalyzer {
 
       // Calculate various metrics
       const spectralClarity = await this.calculateSpectralClarity(audioBuffer);
-      const dynamicRange = this.calculateDynamicRange(audioBuffer);
+      const windowedRms = this.calculateWindowedRMS(audioBuffer);
+      const dynamicRange = this.calculateDynamicRange(windowedRms);
       const stereoWidth = this.calculateStereoWidth(audioBuffer);
       const frequencyBalance = this.calculateFrequencyBalance(audioBuffer);
       const { rms, peak } = this.calculateLevels(audioBuffer);
-      const coherence = this.calculateCoherence(audioBuffer);
+      const coherence = this.calculateCoherence(windowedRms);
 
       // Calculate overall score
       const overallScore = this.calculateOverallScore({
@@ -110,18 +111,9 @@ export class AudioAnalyzer {
   /**
    * Calculate dynamic range (difference between loudest and softest parts)
    */
-  private static calculateDynamicRange(audioBuffer: AudioBuffer): number {
-    const channelData = audioBuffer.getChannelData(0);
-
-    // Split into windows and calculate RMS for each
-    const windowSize = audioBuffer.sampleRate; // 1 second windows
-    const rmsValues: number[] = [];
-
-    for (let i = 0; i < channelData.length; i += windowSize) {
-      const window = channelData.slice(i, i + windowSize);
-      const rms = this.calculateRMS(window);
-      if (rms > 0) rmsValues.push(rms);
-    }
+  private static calculateDynamicRange(windowedRms: number[]): number {
+    // Only use windows with signal
+    const rmsValues = windowedRms.filter(rms => rms > 0);
 
     if (rmsValues.length === 0) return 0;
 
@@ -242,17 +234,8 @@ export class AudioAnalyzer {
   /**
    * Calculate coherence (how consistent the audio quality is)
    */
-  private static calculateCoherence(audioBuffer: AudioBuffer): number {
-    const channelData = audioBuffer.getChannelData(0);
-    const windowSize = audioBuffer.sampleRate; // 1 second windows
-
-    const rmsValues: number[] = [];
-
-    for (let i = 0; i < channelData.length; i += windowSize) {
-      const window = channelData.slice(i, i + windowSize);
-      const rms = this.calculateRMS(window);
-      rmsValues.push(rms);
-    }
+  private static calculateCoherence(windowedRms: number[]): number {
+    const rmsValues = windowedRms;
 
     if (rmsValues.length < 2) return 1;
 
@@ -304,9 +287,28 @@ export class AudioAnalyzer {
   }
 
   /**
+   * Helper: Calculate RMS for 1-second windows of audio
+   */
+  private static calculateWindowedRMS(audioBuffer: AudioBuffer): number[] {
+    const channelData = audioBuffer.getChannelData(0);
+    const windowSize = audioBuffer.sampleRate; // 1 second windows
+    const rmsValues: number[] = [];
+
+    for (let i = 0; i < channelData.length; i += windowSize) {
+      // Use subarray instead of slice to avoid copying data
+      const window = channelData.subarray(i, Math.min(i + windowSize, channelData.length));
+      const rms = this.calculateRMS(window);
+      rmsValues.push(rms);
+    }
+
+    return rmsValues;
+  }
+
+  /**
    * Helper: Calculate RMS of audio samples
    */
   private static calculateRMS(samples: Float32Array): number {
+    if (samples.length === 0) return 0;
     let sum = 0;
     for (let i = 0; i < samples.length; i++) {
       sum += samples[i] * samples[i];
