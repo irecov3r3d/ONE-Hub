@@ -137,7 +137,6 @@ export class AudioMasteringService {
       const copy = new Float32Array(channelData.length);
       copy.set(channelData);
       channels.push(copy);
-      channels.push(new Float32Array(channelData) as any);
     }
     return channels;
   }
@@ -155,7 +154,6 @@ export class AudioMasteringService {
       copy.set(channel);
       return copy;
     });
-    const processedChannels = channels.map(channel => new Float32Array(channel) as any);
 
     for (const band of eqBands) {
       if (!band.enabled) continue;
@@ -312,7 +310,6 @@ export class AudioMasteringService {
       copy.set(ch);
       return copy;
     });
-    let processedChannels = channels.map(ch => new Float32Array(ch) as any);
 
     for (const compressor of compSettings) {
       if (!compressor.enabled) continue;

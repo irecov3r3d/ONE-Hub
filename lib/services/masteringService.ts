@@ -150,9 +150,7 @@ export class MasteringService {
     // that uses tools like:
     // - FFmpeg for audio processing
     // - Sox for effects
-    // - Libr
-
-osa for analysis
+    // - Librosa for analysis
     // - Custom DSP chains
 
     // For now, return a mock endpoint

@@ -66,10 +66,10 @@ export class FastFFTEngine {
     const samples = channelData.slice(startSample, startSample + fftSize);
 
     // Apply Hann window
-    const windowed = this.applyHannWindow(samples);
+    const windowed = FastFFTEngine.applyHannWindow(samples);
 
     // Perform FFT using Cooley-Tukey algorithm
-    const fftResult = this.cooleyTukeyFFT(windowed);
+    const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
 
     // Convert to frequency bands
     const spectrum: FrequencyBand[] = [];
@@ -93,7 +93,7 @@ export class FastFFTEngine {
   /**
    * Cooley-Tukey FFT algorithm (O(n log n) instead of O(n²))
    */
-  private cooleyTukeyFFT(samples: Float32Array): Float32Array {
+  public static cooleyTukeyFFT(samples: Float32Array): Float32Array {
     const n = samples.length;
 
     if (n <= 1) {
@@ -113,8 +113,8 @@ export class FastFFTEngine {
     }
 
     // Recursive FFT
-    const fftEven = this.cooleyTukeyFFT(even);
-    const fftOdd = this.cooleyTukeyFFT(odd);
+    const fftEven = FastFFTEngine.cooleyTukeyFFT(even);
+    const fftOdd = FastFFTEngine.cooleyTukeyFFT(odd);
 
     // Combine results
     const result = new Float32Array(n * 2);
@@ -139,7 +139,7 @@ export class FastFFTEngine {
   /**
    * Apply Hann window to reduce spectral leakage
    */
-  private applyHannWindow(samples: Float32Array): Float32Array {
+  public static applyHannWindow(samples: Float32Array): Float32Array {
     const windowed = new Float32Array(samples.length);
     for (let i = 0; i < samples.length; i++) {
       const windowValue = 0.5 * (1 - Math.cos((2 * Math.PI * i) / samples.length));
@@ -205,8 +205,8 @@ export class FastFFTEngine {
       const startSample = frame * hopSize;
       const samples = channelData.slice(startSample, startSample + fftSize);
 
-      const windowed = this.applyHannWindow(samples);
-      const fftResult = this.cooleyTukeyFFT(windowed);
+      const windowed = FastFFTEngine.applyHannWindow(samples);
+      const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
 
       const frameMagnitudes: number[] = [];
       for (let i = 0; i < fftSize / 2; i++) {
