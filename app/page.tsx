@@ -24,6 +24,7 @@ import WaveformEditor from '@/components/WaveformEditor';
 import StemSeparator from '@/components/StemSeparator';
 import AlbumArtGenerator from '@/components/AlbumArtGenerator';
 import ExportPanel from '@/components/ExportPanel';
+import GlobalPlayer from '@/components/GlobalPlayer';
 import WorkflowAutomation from '@/components/WorkflowAutomation';
 import VisualWorkflowBuilder from '@/components/workflow-builder/VisualWorkflowBuilder';
 import FileOrganizer from '@/components/FileOrganizer';
@@ -57,6 +58,7 @@ export default function Home() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>('generate');
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
+  const [playingSong, setPlayingSong] = useState<Song | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [lyrics, setLyrics] = useState('');
 
@@ -67,6 +69,12 @@ export default function Home() {
 
   const handleFilesUploaded = (files: UploadedFile[]) => {
     setUploadedFiles(prev => [...prev, ...files]);
+  };
+
+  const handleAction = (song: Song, tab: Tab) => {
+    setCurrentSong(song);
+    setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const tabs = [
@@ -139,7 +147,10 @@ export default function Home() {
                 Describe your song and let AI bring it to life
               </p>
             </div>
-            <SongGenerator onSongGenerated={handleSongGenerated} />
+          <SongGenerator
+            onSongGenerated={handleSongGenerated}
+            onNavigate={(tab) => setActiveTab(tab)}
+          />
           </div>
         )}
 
@@ -155,7 +166,11 @@ export default function Home() {
                 Upload vocals, instrumentals, samples, or reference tracks
               </p>
             </div>
-            <FileUpload onFilesUploaded={handleFilesUploaded} multiple />
+          <FileUpload
+            onFilesUploaded={handleFilesUploaded}
+            onNavigate={(tab) => setActiveTab(tab)}
+            multiple
+          />
           </div>
         )}
 
@@ -318,7 +333,12 @@ export default function Home() {
                   : `${songs.length} song${songs.length !== 1 ? 's' : ''} generated`}
               </p>
             </div>
-            <SongLibrary songs={songs} />
+            <SongLibrary
+              songs={songs}
+              onPlay={setPlayingSong}
+              activeSongId={playingSong?.id}
+              onAction={handleAction}
+            />
           </div>
         )}
 
@@ -346,8 +366,14 @@ export default function Home() {
         )}
       </div>
 
+      {/* Global Player */}
+      <GlobalPlayer
+        song={playingSong}
+        onClose={() => setPlayingSong(null)}
+      />
+
       {/* Footer */}
-      <footer className="border-t border-white/10 bg-black/30 backdrop-blur-md mt-20">
+      <footer className={`border-t border-white/10 bg-black/30 backdrop-blur-md mt-20 ${playingSong ? 'pb-32 md:pb-24' : ''}`}>
         <div className="max-w-7xl mx-auto px-4 py-8">
           <p className="text-center text-gray-500 text-sm">
             AI-powered music creation platform • Built with Next.js • Open Source

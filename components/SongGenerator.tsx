@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Sparkles, CheckCircle2, AudioWaveform, Type, Image as ImageIcon, ArrowRight } from 'lucide-react';
 import type { Song } from '@/app/page';
 
 interface SongGeneratorProps {
   onSongGenerated: (song: Song) => void;
+  onNavigate?: (tab: any) => void;
 }
 
 const genres = [
@@ -18,12 +19,13 @@ const moods = [
   'Peaceful', 'Dark', 'Uplifting', 'Mysterious', 'Nostalgic', 'Epic'
 ];
 
-export default function SongGenerator({ onSongGenerated }: SongGeneratorProps) {
+export default function SongGenerator({ onSongGenerated, onNavigate }: SongGeneratorProps) {
   const [prompt, setPrompt] = useState('');
   const [genre, setGenre] = useState('Pop');
   const [mood, setMood] = useState('Happy');
   const [duration, setDuration] = useState(120);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedSong, setGeneratedSong] = useState<Song | null>(null);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -53,6 +55,7 @@ export default function SongGenerator({ onSongGenerated }: SongGeneratorProps) {
 
       const song = await response.json();
       onSongGenerated(song);
+      setGeneratedSong(song);
       setPrompt('');
     } catch (error) {
       console.error('Error generating song:', error);
@@ -61,6 +64,60 @@ export default function SongGenerator({ onSongGenerated }: SongGeneratorProps) {
       setIsGenerating(false);
     }
   };
+
+  if (generatedSong) {
+    return (
+      <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-8 border border-white/10 text-center">
+        <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+          <CheckCircle2 className="w-10 h-10 text-green-500" />
+        </div>
+        <h3 className="text-2xl font-bold text-white mb-2">Song Generated!</h3>
+        <p className="text-gray-400 mb-8">
+          "{generatedSong.title}" is ready. What would you like to do next?
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <button
+            onClick={() => onNavigate?.('waveform')}
+            className="p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group"
+          >
+            <AudioWaveform className="w-8 h-8 text-purple-400 mx-auto mb-3 group-hover:scale-110 transition-transform" />
+            <span className="block text-sm font-medium text-white">Edit Audio</span>
+          </button>
+          <button
+            onClick={() => onNavigate?.('lyrics')}
+            className="p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group"
+          >
+            <Type className="w-8 h-8 text-blue-400 mx-auto mb-3 group-hover:scale-110 transition-transform" />
+            <span className="block text-sm font-medium text-white">Create Lyrics</span>
+          </button>
+          <button
+            onClick={() => onNavigate?.('albumart')}
+            className="p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group"
+          >
+            <ImageIcon className="w-8 h-8 text-pink-400 mx-auto mb-3 group-hover:scale-110 transition-transform" />
+            <span className="block text-sm font-medium text-white">Generate Art</span>
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => onNavigate?.('library')}
+            className="w-full py-3 bg-purple-500 hover:bg-purple-600 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+          >
+            Go to Library
+            <ArrowRight className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setGeneratedSong(null)}
+            className="w-full py-3 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg transition-colors"
+          >
+            Generate Another
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/10">
