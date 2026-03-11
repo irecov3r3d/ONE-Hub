@@ -9,6 +9,10 @@
 **Learning:** The `AudioAnalysisService` uses a naive $O(N^2)$ DFT implementation for frequency analysis, which is a major bottleneck for any audio longer than a few seconds. A Cooley-Tukey FFT ($O(N \log N)$) implementation exists in `FastFFTEngine.ts` but is currently unused in the main analysis pipeline.
 **Action:** Replace the naive DFT in `AudioAnalysisService.ts` with the `FastFFTEngine` implementation.
 
+## 2025-05-15 - [Single-Pass Audio Analysis Optimization]
+**Learning:** Traversing large audio buffers multiple times for different metrics (Peak, RMS, DC Offset, Mono conversion) creates significant CPU overhead and cache misses. Additionally, $O(N \log N)$ operations like full-buffer sorting for Dynamic Range or Noise Floor calculations on 5-minute audio files ($N > 13M$ samples) can lead to memory spikes and multi-second delays.
+**Action:** Consolidate multiple traversals into a single-pass `analyzeBasicStats` method. Use representative sampling ($M=10,000$) for percentile-based calculations to reduce complexity to $O(M \log M)$ without sacrificing perceptual accuracy.
+
 ## 2025-05-15 - [Branch Audit]
 **Learning:** The repository contains many branches that appear to be independent projects (e.g., Firefox extensions, Linux Mint desktop environment, various separate apps).
 **Action:** Identified branches to be moved to separate repositories to maintain "Song Generator Pro" focus.

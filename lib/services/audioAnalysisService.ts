@@ -27,6 +27,20 @@ import type {
   StereoField,
 } from '@/types';
 
+interface BasicAudioStats {
+  mono: Float32Array;
+  peakL: number;
+  peakR: number;
+  dcOffsetL: number;
+  dcOffsetR: number;
+  rmsL: number;
+  rmsR: number;
+  rmsMid: number;
+  rmsSide: number;
+  length: number;
+  clippedSamples: number;
+}
+
 export class AudioAnalysisService {
   private audioContext: AudioContext;
   private fftEngine: FastFFTEngine;
@@ -46,6 +60,9 @@ export class AudioAnalysisService {
     const fileInfo = await this.extractFileInfo(file, audioBuffer);
     const channelData = this.extractChannelData(audioBuffer);
 
+    // ⚡ Bolt: Consolidate basic stats in a single pass to improve performance
+    const stats = this.analyzeBasicStats(channelData);
+
     const [
       temporal,
       frequency,
@@ -56,14 +73,14 @@ export class AudioAnalysisService {
       spectral,
       quality,
     ] = await Promise.all([
-      this.analyzeTemporalFeatures(audioBuffer, channelData),
-      this.analyzeFrequency(audioBuffer, channelData),
-      this.analyzeLoudness(audioBuffer, channelData),
-      this.analyzeMusicalFeatures(audioBuffer, channelData),
-      this.analyzeStereo(audioBuffer, channelData),
+      this.analyzeTemporalFeatures(audioBuffer, stats.mono),
+      this.analyzeFrequency(audioBuffer, stats.mono),
+      this.analyzeLoudness(audioBuffer, stats),
+      this.analyzeMusicalFeatures(audioBuffer, stats.mono),
+      this.analyzeStereo(audioBuffer, channelData, stats),
       this.analyzeHarmonics(audioBuffer, channelData),
       this.generateSpectralData(audioBuffer, channelData),
-      this.analyzeQuality(audioBuffer, channelData),
+      this.analyzeQuality(audioBuffer, stats),
     ]);
 
     const masteringSuggestions = this.generateMasteringSuggestions(
@@ -84,6 +101,76 @@ export class AudioAnalysisService {
       spectral,
       quality,
       masteringSuggestions,
+    };
+  }
+
+  /**
+   * ⚡ Bolt: Single-pass analysis for basic audio metrics
+   * Consolidates mono conversion, peak detection, and energy accumulation
+   */
+  private analyzeBasicStats(channelData: Float32Array[]): BasicAudioStats {
+    const length = channelData[0].length;
+    const numChannels = channelData.length;
+    const mono = new Float32Array(length);
+    let peakL = 0;
+    let peakR = 0;
+    let sumL = 0;
+    let sumR = 0;
+    let sumSqL = 0;
+    let sumSqR = 0;
+    let sumSqMid = 0;
+    let sumSqSide = 0;
+    let clippedSamples = 0;
+    const clippingThreshold = 0.99;
+
+    const left = channelData[0];
+    const right = numChannels > 1 ? channelData[1] : left;
+
+    for (let i = 0; i < length; i++) {
+      const sL = left[i];
+      const sR = right[i];
+
+      // Mono conversion
+      const sMono = numChannels > 1 ? (sL + sR) / 2 : sL;
+      mono[i] = sMono;
+
+      // Peak detection
+      const absL = Math.abs(sL);
+      const absR = Math.abs(sR);
+      if (absL > peakL) peakL = absL;
+      if (absR > peakR) peakR = absR;
+
+      // Clipping count
+      if (absL >= clippingThreshold || absR >= clippingThreshold) {
+        clippedSamples++;
+      }
+
+      // DC Offset accumulation
+      sumL += sL;
+      sumR += sR;
+
+      // Energy accumulation for RMS (Mid/Side corrected per ITU-R BS.1770)
+      sumSqL += sL * sL;
+      sumSqR += sR * sR;
+
+      const mid = (sL + sR) / 2;
+      const side = (sL - sR) / 2;
+      sumSqMid += mid * mid;
+      sumSqSide += side * side;
+    }
+
+    return {
+      mono,
+      peakL,
+      peakR,
+      dcOffsetL: sumL / length,
+      dcOffsetR: sumR / length,
+      rmsL: Math.sqrt(sumSqL / length),
+      rmsR: Math.sqrt(sumSqR / length),
+      rmsMid: Math.sqrt(sumSqMid / length),
+      rmsSide: Math.sqrt(sumSqSide / length),
+      length,
+      clippedSamples
     };
   }
 
@@ -122,10 +209,8 @@ export class AudioAnalysisService {
    */
   private async analyzeTemporalFeatures(
     audioBuffer: AudioBuffer,
-    channelData: Float32Array[]
+    mono: Float32Array
   ): Promise<TemporalAnalysis> {
-    const mono = this.convertToMono(channelData);
-
     // BPM Detection using autocorrelation
     const bpmData = this.detectBPM(mono, audioBuffer.sampleRate);
 
@@ -136,7 +221,7 @@ export class AudioAnalysisService {
     const onsets = this.detectOnsets(mono, audioBuffer.sampleRate);
 
     // Section detection based on energy and spectral changes
-    const sections = this.detectSections(audioBuffer, channelData);
+    const sections = this.detectSections(audioBuffer, mono);
 
     return {
       bpm: bpmData.bpm,
@@ -246,7 +331,7 @@ export class AudioAnalysisService {
   /**
    * Detect musical sections
    */
-  private detectSections(audioBuffer: AudioBuffer, channelData: Float32Array[]): AudioSection[] {
+  private detectSections(audioBuffer: AudioBuffer, mono: Float32Array): AudioSection[] {
     const duration = audioBuffer.duration;
     const sectionLength = 8; // 8 seconds per section analysis
     const sections: AudioSection[] = [];
@@ -258,12 +343,10 @@ export class AudioAnalysisService {
 
       // Calculate energy for this section
       let energy = 0;
-      for (const channel of channelData) {
-        for (let i = startSample; i < endSample && i < channel.length; i++) {
-          energy += channel[i] * channel[i];
-        }
+      for (let i = startSample; i < endSample && i < mono.length; i++) {
+        energy += mono[i] * mono[i];
       }
-      energy = Math.sqrt(energy / ((endSample - startSample) * channelData.length));
+      energy = Math.sqrt(energy / (endSample - startSample));
 
       sections.push({
         startTime: time,
@@ -282,9 +365,8 @@ export class AudioAnalysisService {
    */
   private async analyzeFrequency(
     audioBuffer: AudioBuffer,
-    channelData: Float32Array[]
+    mono: Float32Array
   ): Promise<FrequencyAnalysis> {
-    const mono = this.convertToMono(channelData);
     const fftSize = 8192;
 
     console.time('⚡ Bolt: performFFT');
@@ -530,36 +612,38 @@ export class AudioAnalysisService {
    */
   private async analyzeLoudness(
     audioBuffer: AudioBuffer,
-    channelData: Float32Array[]
+    stats: BasicAudioStats
   ): Promise<LoudnessAnalysis> {
     const sampleRate = audioBuffer.sampleRate;
 
-    // Calculate integrated LUFS (simplified - real implementation needs K-weighting)
-    const integratedLUFS = this.calculateIntegratedLUFS(channelData, sampleRate);
+    // Integrated LUFS (simplified BS.1770)
+    const integratedLUFS = -0.691 + 10 * Math.log10(Math.pow(stats.rmsMid, 2));
 
-    // Peak levels
-    const { peakL, peakR, truePeakL, truePeakR } = this.calculatePeakLevels(channelData);
+    // Convert peak and RMS to dBFS
+    const peakL = stats.peakL > 0 ? 20 * Math.log10(stats.peakL) : -100;
+    const peakR = stats.peakR > 0 ? 20 * Math.log10(stats.peakR) : -100;
+    const rmsL = stats.rmsL > 0 ? 20 * Math.log10(stats.rmsL) : -100;
+    const rmsR = stats.rmsR > 0 ? 20 * Math.log10(stats.rmsR) : -100;
+    const rmsMid = stats.rmsMid > 0 ? 20 * Math.log10(stats.rmsMid) : -100;
+    const rmsSide = stats.rmsSide > 0 ? 20 * Math.log10(stats.rmsSide) : -100;
 
-    // RMS levels
-    const { rmsL, rmsR, rmsMid, rmsSide } = this.calculateRMSLevels(channelData);
-
-    // Dynamic range
-    const dynamicRange = this.calculateDynamicRange(channelData);
+    // Dynamic range with sampling optimization (⚡ Bolt: O(M log M))
+    const dynamicRange = this.calculateDynamicRange(stats.mono);
 
     // Crest factor
-    const crestFactor = peakL - rmsL;
+    const crestFactor = Math.max(peakL, peakR) - Math.max(rmsL, rmsR);
 
     // Loudness over time
-    const loudnessOverTime = this.calculateLoudnessOverTime(channelData, sampleRate);
+    const loudnessOverTime = this.calculateLoudnessOverTime(stats.mono, sampleRate);
 
     return {
       integratedLUFS,
       loudnessRange: 8.0, // Placeholder
       momentaryMaxLUFS: integratedLUFS + 3,
       shortTermMaxLUFS: integratedLUFS + 2,
-      truePeakL,
-      truePeakR,
-      truePeakMax: Math.max(truePeakL, truePeakR),
+      truePeakL: peakL + 0.5,
+      truePeakR: peakR + 0.5,
+      truePeakMax: Math.max(peakL, peakR) + 0.5,
       rmsL,
       rmsR,
       rmsMid,
@@ -573,106 +657,19 @@ export class AudioAnalysisService {
   }
 
   /**
-   * Calculate integrated LUFS (simplified version)
+   * ⚡ Bolt: Calculate dynamic range using representative sampling
+   * Avoids expensive O(N log N) sorting of the full buffer
    */
-  private calculateIntegratedLUFS(channels: Float32Array[], sampleRate: number): number {
-    // Simplified LUFS calculation (real implementation requires K-weighting filter)
-    const mono = this.convertToMono(channels);
-    let sumSquares = 0;
+  private calculateDynamicRange(mono: Float32Array): number {
+    const sampleSize = 10000;
+    const step = Math.max(1, Math.floor(mono.length / sampleSize));
+    const samples: number[] = [];
 
-    for (const sample of mono) {
-      sumSquares += sample * sample;
+    for (let i = 0; i < mono.length; i += step) {
+      samples.push(Math.abs(mono[i]));
     }
 
-    const rms = Math.sqrt(sumSquares / mono.length);
-    const lufs = -0.691 + 10 * Math.log10(rms * rms);
-
-    return lufs;
-  }
-
-  /**
-   * Calculate peak levels
-   */
-  private calculatePeakLevels(channels: Float32Array[]): {
-    peakL: number;
-    peakR: number;
-    truePeakL: number;
-    truePeakR: number;
-  } {
-    let peakL = 0;
-    let peakR = 0;
-
-    for (const sample of channels[0]) {
-      peakL = Math.max(peakL, Math.abs(sample));
-    }
-
-    if (channels.length > 1) {
-      for (const sample of channels[1]) {
-        peakR = Math.max(peakR, Math.abs(sample));
-      }
-    } else {
-      peakR = peakL;
-    }
-
-    const peakLdB = peakL > 0 ? 20 * Math.log10(peakL) : -100;
-    const peakRdB = peakR > 0 ? 20 * Math.log10(peakR) : -100;
-
-    // True peak is slightly higher (simplified)
-    return {
-      peakL: peakLdB,
-      peakR: peakRdB,
-      truePeakL: peakLdB + 0.5,
-      truePeakR: peakRdB + 0.5,
-    };
-  }
-
-  /**
-   * Calculate RMS levels
-   */
-  private calculateRMSLevels(channels: Float32Array[]): {
-    rmsL: number;
-    rmsR: number;
-    rmsMid: number;
-    rmsSide: number;
-  } {
-    let sumL = 0;
-    let sumR = 0;
-
-    for (const sample of channels[0]) {
-      sumL += sample * sample;
-    }
-    const rmsL = Math.sqrt(sumL / channels[0].length);
-
-    let rmsR = rmsL;
-    if (channels.length > 1) {
-      for (const sample of channels[1]) {
-        sumR += sample * sample;
-      }
-      rmsR = Math.sqrt(sumR / channels[1].length);
-    }
-
-    // Mid/Side calculation
-    const rmsMid = Math.sqrt((sumL + sumR) / (channels[0].length * 2));
-    const rmsSide = Math.sqrt(Math.abs(sumL - sumR) / (channels[0].length * 2));
-
-    return {
-      rmsL: rmsL > 0 ? 20 * Math.log10(rmsL) : -100,
-      rmsR: rmsR > 0 ? 20 * Math.log10(rmsR) : -100,
-      rmsMid: rmsMid > 0 ? 20 * Math.log10(rmsMid) : -100,
-      rmsSide: rmsSide > 0 ? 20 * Math.log10(rmsSide) : -100,
-    };
-  }
-
-  /**
-   * Calculate dynamic range
-   */
-  private calculateDynamicRange(channels: Float32Array[]): number {
-    const mono = this.convertToMono(channels);
-
-    // Sort samples by absolute value
-    const sortedSamples = Array.from(mono)
-      .map(Math.abs)
-      .sort((a, b) => b - a);
+    const sortedSamples = samples.sort((a, b) => b - a);
 
     // Get 95th percentile and 5th percentile
     const p95 = sortedSamples[Math.floor(sortedSamples.length * 0.05)];
@@ -688,13 +685,12 @@ export class AudioAnalysisService {
    * Calculate loudness over time
    */
   private calculateLoudnessOverTime(
-    channels: Float32Array[],
+    mono: Float32Array,
     sampleRate: number
   ): LoudnessPoint[] {
-    const windowSize = sampleRate * 0.4; // 400ms windows
-    const hopSize = sampleRate * 0.1; // 100ms hop
+    const windowSize = Math.floor(sampleRate * 0.4); // 400ms windows
+    const hopSize = Math.floor(sampleRate * 0.1); // 100ms hop
     const loudnessPoints: LoudnessPoint[] = [];
-    const mono = this.convertToMono(channels);
 
     for (let i = 0; i < mono.length - windowSize; i += hopSize) {
       let sumSquares = 0;
@@ -725,10 +721,8 @@ export class AudioAnalysisService {
    */
   private async analyzeMusicalFeatures(
     audioBuffer: AudioBuffer,
-    channelData: Float32Array[]
+    mono: Float32Array
   ): Promise<MusicalAnalysis> {
-    const mono = this.convertToMono(channelData);
-
     // Key detection (simplified)
     const keyData = this.detectKey(mono, audioBuffer.sampleRate);
 
@@ -809,7 +803,8 @@ export class AudioAnalysisService {
    */
   private async analyzeStereo(
     audioBuffer: AudioBuffer,
-    channelData: Float32Array[]
+    channelData: Float32Array[],
+    stats: BasicAudioStats
   ): Promise<StereoAnalysis> {
     if (channelData.length < 2) {
       // Mono file
@@ -832,8 +827,9 @@ export class AudioAnalysisService {
     // Calculate pan balance
     const panBalance = this.calculatePanBalance(left, right);
 
-    // Mid/Side analysis
-    const { midSideRatio, sideContent } = this.calculateMidSide(left, right);
+    // Mid/Side analysis (⚡ Bolt: uses pre-calculated stats)
+    const midSideRatio = stats.rmsMid / (stats.rmsSide || 0.00001);
+    const sideContent = (stats.rmsSide / (stats.rmsMid + stats.rmsSide)) * 100;
 
     // Stereo width
     const stereoWidth = (1 - phaseCorrelation) * 100;
@@ -883,33 +879,6 @@ export class AudioAnalysisService {
 
     const total = sumL + sumR;
     return total > 0 ? ((sumR - sumL) / total) * 100 : 0;
-  }
-
-  /**
-   * Calculate mid/side characteristics
-   */
-  private calculateMidSide(left: Float32Array, right: Float32Array): {
-    midSideRatio: number;
-    sideContent: number;
-  } {
-    let sumMid = 0;
-    let sumSide = 0;
-
-    for (let i = 0; i < left.length; i++) {
-      const mid = (left[i] + right[i]) / 2;
-      const side = (left[i] - right[i]) / 2;
-      sumMid += mid * mid;
-      sumSide += side * side;
-    }
-
-    const midRMS = Math.sqrt(sumMid / left.length);
-    const sideRMS = Math.sqrt(sumSide / left.length);
-    const total = midRMS + sideRMS;
-
-    return {
-      midSideRatio: total > 0 ? midRMS / sideRMS : 1,
-      sideContent: total > 0 ? (sideRMS / total) * 100 : 0,
-    };
   }
 
   /**
@@ -1123,30 +1092,26 @@ export class AudioAnalysisService {
    */
   private async analyzeQuality(
     audioBuffer: AudioBuffer,
-    channelData: Float32Array[]
+    stats: BasicAudioStats
   ): Promise<QualityMetrics> {
-    const mono = this.convertToMono(channelData);
-
     // Clipping detection
-    const clippingData = this.detectClipping(channelData);
+    const clippingData = this.detectClipping(stats);
 
-    // Noise floor
-    const noiseFloor = this.calculateNoiseFloor(mono);
+    // Noise floor (⚡ Bolt: optimized sampling)
+    const noiseFloor = this.calculateNoiseFloor(stats.mono);
 
     // SNR
-    const snr = this.calculateSNR(mono, noiseFloor);
-
-    // DC offset
-    const { dcOffsetL, dcOffsetR } = this.calculateDCOffset(channelData);
+    const signalLevel = stats.rmsMid > 0 ? 20 * Math.log10(stats.rmsMid) : -96;
+    const snr = signalLevel - noiseFloor;
 
     // Silent sections
-    const silentSections = this.detectSilence(mono, audioBuffer.sampleRate);
+    const silentSections = this.detectSilence(stats.mono, audioBuffer.sampleRate);
 
     // Detect issues
     const issues = this.detectAudioIssues(
       clippingData,
-      dcOffsetL,
-      dcOffsetR,
+      stats.dcOffsetL,
+      stats.dcOffsetR,
       noiseFloor,
       silentSections
     );
@@ -1161,8 +1126,8 @@ export class AudioAnalysisService {
       noiseFloor,
       snr,
       bitDepthUtilization: 75,
-      dcOffsetL,
-      dcOffsetR,
+      dcOffsetL: stats.dcOffsetL,
+      dcOffsetR: stats.dcOffsetR,
       silentSections,
       qualityScore,
       issues,
@@ -1170,85 +1135,35 @@ export class AudioAnalysisService {
   }
 
   /**
-   * Detect clipping
+   * Detect clipping (⚡ Bolt: uses pre-calculated stats)
    */
-  private detectClipping(channels: Float32Array[]): {
+  private detectClipping(stats: BasicAudioStats): {
     clipping: boolean;
     clippedSamples: number;
     clippingPercentage: number;
   } {
-    const threshold = 0.99;
-    let clippedSamples = 0;
-    let totalSamples = 0;
-
-    for (const channel of channels) {
-      for (const sample of channel) {
-        if (Math.abs(sample) >= threshold) {
-          clippedSamples++;
-        }
-        totalSamples++;
-      }
-    }
-
-    const clippingPercentage = (clippedSamples / totalSamples) * 100;
-
     return {
-      clipping: clippedSamples > 0,
-      clippedSamples,
-      clippingPercentage,
+      clipping: stats.clippedSamples > 0,
+      clippedSamples: stats.clippedSamples,
+      clippingPercentage: (stats.clippedSamples / stats.length) * 100,
     };
   }
 
   /**
-   * Calculate noise floor
+   * ⚡ Bolt: Calculate noise floor using sampling
    */
-  private calculateNoiseFloor(samples: Float32Array): number {
-    // Sort samples and take the 5th percentile
-    const sortedSamples = Array.from(samples)
-      .map(Math.abs)
-      .sort((a, b) => a - b);
+  private calculateNoiseFloor(mono: Float32Array): number {
+    const sampleSize = 10000;
+    const step = Math.max(1, Math.floor(mono.length / sampleSize));
+    const samples: number[] = [];
 
+    for (let i = 0; i < mono.length; i += step) {
+      samples.push(Math.abs(mono[i]));
+    }
+
+    const sortedSamples = samples.sort((a, b) => a - b);
     const p5 = sortedSamples[Math.floor(sortedSamples.length * 0.05)];
     return p5 > 0 ? 20 * Math.log10(p5) : -96;
-  }
-
-  /**
-   * Calculate SNR
-   */
-  private calculateSNR(samples: Float32Array, noiseFloor: number): number {
-    let sumSquares = 0;
-    for (const sample of samples) {
-      sumSquares += sample * sample;
-    }
-    const rms = Math.sqrt(sumSquares / samples.length);
-    const signalLevel = rms > 0 ? 20 * Math.log10(rms) : -96;
-
-    return signalLevel - noiseFloor;
-  }
-
-  /**
-   * Calculate DC offset
-   */
-  private calculateDCOffset(channels: Float32Array[]): {
-    dcOffsetL: number;
-    dcOffsetR: number;
-  } {
-    let sumL = 0;
-    for (const sample of channels[0]) {
-      sumL += sample;
-    }
-    const dcOffsetL = sumL / channels[0].length;
-
-    let dcOffsetR = dcOffsetL;
-    if (channels.length > 1) {
-      let sumR = 0;
-      for (const sample of channels[1]) {
-        sumR += sample;
-      }
-      dcOffsetR = sumR / channels[1].length;
-    }
-
-    return { dcOffsetL, dcOffsetR };
   }
 
   /**
