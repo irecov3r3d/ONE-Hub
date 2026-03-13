@@ -597,6 +597,7 @@ For questions, issues, or feature requests, please open an issue on GitHub.
 ## 🗺️ Roadmap
 
 ### Planned Features
+- [ ] Task Recorder MVP (Chrome/Chromebook) — see `docs/task-recorder-mvp.md`
 - [ ] Real-time collaboration
 - [ ] User authentication and accounts
 - [ ] Cloud project storage
