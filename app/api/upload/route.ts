@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,10 +24,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate unique filename
-    const timestamp = Date.now();
-    const randomString = Math.random().toString(36).substring(7);
+    const fileId = crypto.randomUUID();
     const extension = file.name.split('.').pop();
-    const filename = `${timestamp}-${randomString}.${extension}`;
+    const filename = `${fileId}.${extension}`;
     const filepath = path.join(uploadsDir, filename);
 
     // Convert file to buffer and save
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     const fileUrl = `/uploads/${filename}`;
 
     return NextResponse.json({
-      id: `${timestamp}-${randomString}`,
+      id: fileId,
       url: fileUrl,
       name: file.name,
       type,

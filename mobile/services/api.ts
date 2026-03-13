@@ -55,22 +55,28 @@ export interface Song {
   };
 }
 
+export interface QualityMetrics {
+  spectralClarity: number;
+  dynamicRange: number;
+  stereoWidth: number;
+  frequencyBalance: number;
+  overallScore: number;
+  promptAdherence: number;
+}
+
+export interface GenerationResult {
+  id: string;
+  modelName: string;
+  audioUrl: string;
+  metrics: QualityMetrics;
+  generationTime: number;
+  cost: number;
+}
+
 export interface ComparisonResult {
   mode: 'comparison';
   title: string;
-  generations: Array<{
-    id: string;
-    modelName: string;
-    audioUrl: string;
-    metrics: {
-      spectralClarity: number;
-      dynamicRange: number;
-      stereoWidth: number;
-      frequencyBalance: number;
-      overallScore: number;
-    };
-    generationTime: number;
-  }>;
+  generations: GenerationResult[];
   bestGeneration: string;
   totalCost: number;
   totalTime: number;

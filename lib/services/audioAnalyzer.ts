@@ -2,6 +2,7 @@
 // Analyzes generated audio for quality metrics
 
 import type { QualityMetrics } from '@/lib/config/aiModels';
+import { FastFFTEngine } from './fastFFTEngine';
 
 export class AudioAnalyzer {
   /**
@@ -14,11 +15,12 @@ export class AudioAnalyzer {
 
       // Calculate various metrics
       const spectralClarity = await this.calculateSpectralClarity(audioBuffer);
-      const dynamicRange = this.calculateDynamicRange(audioBuffer);
+      const windowedRms = this.calculateWindowedRMS(audioBuffer);
+      const dynamicRange = this.calculateDynamicRange(windowedRms);
       const stereoWidth = this.calculateStereoWidth(audioBuffer);
       const frequencyBalance = this.calculateFrequencyBalance(audioBuffer);
       const { rms, peak } = this.calculateLevels(audioBuffer);
-      const coherence = this.calculateCoherence(audioBuffer);
+      const coherence = this.calculateCoherence(windowedRms);
 
       // Calculate overall score
       const overallScore = this.calculateOverallScore({
@@ -83,7 +85,7 @@ export class AudioAnalyzer {
 
     // Perform FFT analysis
     const fftSize = 2048;
-    const frequencyBins = this.performFFT(channelData, fftSize);
+    const frequencyBins = this.performFFT(channelData, fftSize, sampleRate);
 
     // Analyze high frequency content (4kHz - 20kHz)
     const hfStart = Math.floor((4000 / sampleRate) * fftSize);
@@ -110,18 +112,9 @@ export class AudioAnalyzer {
   /**
    * Calculate dynamic range (difference between loudest and softest parts)
    */
-  private static calculateDynamicRange(audioBuffer: AudioBuffer): number {
-    const channelData = audioBuffer.getChannelData(0);
-
-    // Split into windows and calculate RMS for each
-    const windowSize = audioBuffer.sampleRate; // 1 second windows
-    const rmsValues: number[] = [];
-
-    for (let i = 0; i < channelData.length; i += windowSize) {
-      const window = channelData.slice(i, i + windowSize);
-      const rms = this.calculateRMS(window);
-      if (rms > 0) rmsValues.push(rms);
-    }
+  private static calculateDynamicRange(windowedRms: number[]): number {
+    // Only use windows with signal
+    const rmsValues = windowedRms.filter(rms => rms > 0);
 
     if (rmsValues.length === 0) return 0;
 
@@ -179,7 +172,7 @@ export class AudioAnalyzer {
     const sampleRate = audioBuffer.sampleRate;
     const fftSize = 2048;
 
-    const frequencyBins = this.performFFT(channelData, fftSize);
+    const frequencyBins = this.performFFT(channelData, fftSize, sampleRate);
 
     // Divide spectrum into 3 bands: bass, mids, highs
     const bassEnd = Math.floor((250 / sampleRate) * fftSize);
@@ -227,7 +220,14 @@ export class AudioAnalyzer {
     const channelData = audioBuffer.getChannelData(0);
 
     const rms = this.calculateRMS(channelData);
-    const peak = Math.max(...Array.from(channelData).map(Math.abs));
+
+    // ⚡ Bolt Optimization: Use high-performance loop instead of spread operator
+    // This avoids "Maximum call stack size exceeded" and reduces memory allocations
+    let peak = 0;
+    for (let i = 0; i < channelData.length; i++) {
+      const abs = Math.abs(channelData[i]);
+      if (abs > peak) peak = abs;
+    }
 
     // Convert to dB
     const rmsDb = 20 * Math.log10(rms);
@@ -242,17 +242,8 @@ export class AudioAnalyzer {
   /**
    * Calculate coherence (how consistent the audio quality is)
    */
-  private static calculateCoherence(audioBuffer: AudioBuffer): number {
-    const channelData = audioBuffer.getChannelData(0);
-    const windowSize = audioBuffer.sampleRate; // 1 second windows
-
-    const rmsValues: number[] = [];
-
-    for (let i = 0; i < channelData.length; i += windowSize) {
-      const window = channelData.slice(i, i + windowSize);
-      const rms = this.calculateRMS(window);
-      rmsValues.push(rms);
-    }
+  private static calculateCoherence(windowedRms: number[]): number {
+    const rmsValues = windowedRms;
 
     if (rmsValues.length < 2) return 1;
 
@@ -304,34 +295,64 @@ export class AudioAnalyzer {
   }
 
   /**
+   * Helper: Calculate RMS for 1-second windows of audio
+   */
+  private static calculateWindowedRMS(audioBuffer: AudioBuffer): number[] {
+    const channelData = audioBuffer.getChannelData(0);
+    const windowSize = audioBuffer.sampleRate; // 1 second windows
+    const rmsValues: number[] = [];
+
+    for (let i = 0; i < channelData.length; i += windowSize) {
+      // Use subarray instead of slice to avoid copying data
+      const window = channelData.subarray(i, Math.min(i + windowSize, channelData.length));
+      const rms = this.calculateRMS(window);
+      rmsValues.push(rms);
+    }
+
+    return rmsValues;
+  }
+
+  /**
    * Helper: Calculate RMS of audio samples
    */
   private static calculateRMS(samples: Float32Array): number {
+    if (samples.length === 0) return 0;
     let sum = 0;
-    for (let i = 0; i < samples.length; i++) {
-      sum += samples[i] * samples[i];
+    const len = samples.length;
+    for (let i = 0; i < len; i++) {
+      const sample = samples[i];
+      sum += sample * sample;
     }
-    return Math.sqrt(sum / samples.length);
+    return Math.sqrt(sum / len);
   }
 
   /**
    * Helper: Perform FFT analysis
-   * (Simplified - in production use a proper FFT library)
+   * ⚡ Bolt Optimization: Use real Cooley-Tukey FFT instead of random placeholder
    */
-  private static performFFT(samples: Float32Array, fftSize: number): Float32Array {
-    // This is a placeholder
-    // In production, use a proper FFT library like fft.js or Web Audio API AnalyserNode
+  private static performFFT(samples: Float32Array, fftSize: number, sampleRate: number): Float32Array {
+    // Use middle portion for analysis
+    const startSample = Math.floor(samples.length / 2) - Math.floor(fftSize / 2);
+    const segment = samples.slice(Math.max(0, startSample), Math.min(samples.length, startSample + fftSize));
 
-    const result = new Float32Array(fftSize / 2);
+    // Pad with zeros if necessary to reach fftSize (must be power of 2)
+    const paddedSamples = new Float32Array(fftSize);
+    paddedSamples.set(segment);
 
-    // Simulate frequency distribution
-    for (let i = 0; i < result.length; i++) {
-      const frequency = (i / result.length) * 22050; // Assuming 44.1kHz sample rate
-      // Typical music spectrum (more energy in lower frequencies)
-      result[i] = Math.exp(-frequency / 2000) * (Math.random() * 0.2 + 0.9);
+    // Apply Hann window
+    const windowed = FastFFTEngine.applyHannWindow(paddedSamples);
+
+    // Perform FFT
+    const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
+
+    const magnitudes = new Float32Array(fftSize / 2);
+    for (let i = 0; i < fftSize / 2; i++) {
+      const real = fftResult[i * 2];
+      const imag = fftResult[i * 2 + 1];
+      magnitudes[i] = Math.sqrt(real * real + imag * imag) / fftSize;
     }
 
-    return result;
+    return magnitudes;
   }
 }
 

@@ -54,8 +54,6 @@ export class MasteringService {
       ...settings,
     };
 
-    console.log('🎚️ Applying professional mastering...');
-
     // Try LANDR first (if available), fallback to custom chain
     try {
       if (process.env.LANDR_API_KEY) {
@@ -144,8 +142,6 @@ export class MasteringService {
     audioUrl: string,
     settings: MasteringSettings
   ): Promise<string> {
-    console.log('🎛️ Using custom mastering chain...');
-
     // In production, this would call a server-side mastering endpoint
     // that uses tools like:
     // - FFmpeg for audio processing
@@ -179,8 +175,6 @@ export class MasteringService {
     audioUrl: string,
     referenceUrl: string
   ): Promise<string> {
-    console.log('🎯 Matching reference track...');
-
     // Analyze reference track
     const refMetrics = await this.analyzeReferenceTrack(referenceUrl);
 
@@ -240,8 +234,6 @@ export class MasteringService {
    * Simulates tape saturation, tube warmth, etc.
    */
   static async addAnalogWarmth(audioUrl: string): Promise<string> {
-    console.log('🎸 Adding analog warmth...');
-
     // This would apply:
     // - Tape saturation
     // - Tube harmonic distortion
@@ -264,8 +256,6 @@ export class MasteringService {
     },
     settings: MasteringSettings
   ): Promise<string> {
-    console.log('🎛️ Stem-based mastering...');
-
     // Process each stem individually
     const processedStems: Record<string, string> = {};
 

@@ -1,6 +1,6 @@
 'use client';
 
-import type { Song } from '@/app/page';
+import type { Song } from '@/types';
 import AudioPlayer from './AudioPlayer';
 import { Music2 } from 'lucide-react';
 

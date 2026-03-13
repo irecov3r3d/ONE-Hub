@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Play, Pause, Download, Volume2, VolumeX } from 'lucide-react';
-import type { Song } from '@/app/page';
+import type { Song } from '@/types';
 
 interface AudioPlayerProps {
   song: Song;
