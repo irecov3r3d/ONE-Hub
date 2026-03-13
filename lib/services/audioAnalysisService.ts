@@ -27,6 +27,19 @@ import type {
   StereoField,
 } from '@/types';
 
+interface BasicAudioStats {
+  peakL: number;
+  peakR: number;
+  rmsL: number;
+  rmsR: number;
+  rmsMid: number;
+  rmsSide: number;
+  dcOffsetL: number;
+  dcOffsetR: number;
+  clippedSamples: number;
+  totalSamples: number;
+}
+
 export class AudioAnalysisService {
   private audioContext: AudioContext;
   private fftEngine: FastFFTEngine;
@@ -533,21 +546,16 @@ export class AudioAnalysisService {
     channelData: Float32Array[]
   ): Promise<LoudnessAnalysis> {
     const sampleRate = audioBuffer.sampleRate;
+    const stats = this.analyzeBasicStats(channelData);
 
     // Calculate integrated LUFS (simplified - real implementation needs K-weighting)
     const integratedLUFS = this.calculateIntegratedLUFS(channelData, sampleRate);
-
-    // Peak levels
-    const { peakL, peakR, truePeakL, truePeakR } = this.calculatePeakLevels(channelData);
-
-    // RMS levels
-    const { rmsL, rmsR, rmsMid, rmsSide } = this.calculateRMSLevels(channelData);
 
     // Dynamic range
     const dynamicRange = this.calculateDynamicRange(channelData);
 
     // Crest factor
-    const crestFactor = peakL - rmsL;
+    const crestFactor = stats.peakL - stats.rmsL;
 
     // Loudness over time
     const loudnessOverTime = this.calculateLoudnessOverTime(channelData, sampleRate);
@@ -557,15 +565,15 @@ export class AudioAnalysisService {
       loudnessRange: 8.0, // Placeholder
       momentaryMaxLUFS: integratedLUFS + 3,
       shortTermMaxLUFS: integratedLUFS + 2,
-      truePeakL,
-      truePeakR,
-      truePeakMax: Math.max(truePeakL, truePeakR),
-      rmsL,
-      rmsR,
-      rmsMid,
-      rmsSide,
-      peakL,
-      peakR,
+      truePeakL: stats.peakL + 0.5,
+      truePeakR: stats.peakR + 0.5,
+      truePeakMax: Math.max(stats.peakL, stats.peakR) + 0.5,
+      rmsL: stats.rmsL,
+      rmsR: stats.rmsR,
+      rmsMid: stats.rmsMid,
+      rmsSide: stats.rmsSide,
+      peakL: stats.peakL,
+      peakR: stats.peakR,
       crestFactor,
       dynamicRange,
       loudnessOverTime,
@@ -590,93 +598,29 @@ export class AudioAnalysisService {
     return lufs;
   }
 
-  /**
-   * Calculate peak levels
-   */
-  private calculatePeakLevels(channels: Float32Array[]): {
-    peakL: number;
-    peakR: number;
-    truePeakL: number;
-    truePeakR: number;
-  } {
-    let peakL = 0;
-    let peakR = 0;
-
-    for (const sample of channels[0]) {
-      peakL = Math.max(peakL, Math.abs(sample));
-    }
-
-    if (channels.length > 1) {
-      for (const sample of channels[1]) {
-        peakR = Math.max(peakR, Math.abs(sample));
-      }
-    } else {
-      peakR = peakL;
-    }
-
-    const peakLdB = peakL > 0 ? 20 * Math.log10(peakL) : -100;
-    const peakRdB = peakR > 0 ? 20 * Math.log10(peakR) : -100;
-
-    // True peak is slightly higher (simplified)
-    return {
-      peakL: peakLdB,
-      peakR: peakRdB,
-      truePeakL: peakLdB + 0.5,
-      truePeakR: peakRdB + 0.5,
-    };
-  }
-
-  /**
-   * Calculate RMS levels
-   */
-  private calculateRMSLevels(channels: Float32Array[]): {
-    rmsL: number;
-    rmsR: number;
-    rmsMid: number;
-    rmsSide: number;
-  } {
-    let sumL = 0;
-    let sumR = 0;
-
-    for (const sample of channels[0]) {
-      sumL += sample * sample;
-    }
-    const rmsL = Math.sqrt(sumL / channels[0].length);
-
-    let rmsR = rmsL;
-    if (channels.length > 1) {
-      for (const sample of channels[1]) {
-        sumR += sample * sample;
-      }
-      rmsR = Math.sqrt(sumR / channels[1].length);
-    }
-
-    // Mid/Side calculation
-    const rmsMid = Math.sqrt((sumL + sumR) / (channels[0].length * 2));
-    const rmsSide = Math.sqrt(Math.abs(sumL - sumR) / (channels[0].length * 2));
-
-    return {
-      rmsL: rmsL > 0 ? 20 * Math.log10(rmsL) : -100,
-      rmsR: rmsR > 0 ? 20 * Math.log10(rmsR) : -100,
-      rmsMid: rmsMid > 0 ? 20 * Math.log10(rmsMid) : -100,
-      rmsSide: rmsSide > 0 ? 20 * Math.log10(rmsSide) : -100,
-    };
-  }
 
   /**
    * Calculate dynamic range
+   * ⚡ Bolt: Uses representative sampling (M=10,000) for O(M log M) performance
+   * instead of sorting the full buffer O(N log N).
    */
   private calculateDynamicRange(channels: Float32Array[]): number {
     const mono = this.convertToMono(channels);
+    const sampleSize = 10000;
+    const step = Math.max(1, Math.floor(mono.length / sampleSize));
+    const samples: number[] = [];
 
-    // Sort samples by absolute value
-    const sortedSamples = Array.from(mono)
-      .map(Math.abs)
-      .sort((a, b) => b - a);
+    for (let i = 0; i < mono.length; i += step) {
+      samples.push(Math.abs(mono[i]));
+      if (samples.length >= sampleSize) break;
+    }
+
+    // Sort the representative sample
+    samples.sort((a, b) => b - a);
 
     // Get 95th percentile and 5th percentile
-    const p95 = sortedSamples[Math.floor(sortedSamples.length * 0.05)];
-    const p5 = sortedSamples[Math.floor(sortedSamples.length * 0.95)];
+    const p95 = samples[Math.floor(samples.length * 0.05)];
+    const p5 = samples[Math.floor(samples.length * 0.95)];
 
     const p95dB = p95 > 0 ? 20 * Math.log10(p95) : -100;
     const p5dB = p5 > 0 ? 20 * Math.log10(p5) : -100;
@@ -887,27 +831,28 @@ export class AudioAnalysisService {
 
   /**
    * Calculate mid/side characteristics
+   * ⚡ Bolt: Correct energy-preserving Mid/Side calculation
    */
   private calculateMidSide(left: Float32Array, right: Float32Array): {
     midSideRatio: number;
     sideContent: number;
   } {
-    let sumMid = 0;
-    let sumSide = 0;
+    let sumMidSq = 0;
+    let sumSideSq = 0;
 
     for (let i = 0; i < left.length; i++) {
       const mid = (left[i] + right[i]) / 2;
       const side = (left[i] - right[i]) / 2;
-      sumMid += mid * mid;
-      sumSide += side * side;
+      sumMidSq += mid * mid;
+      sumSideSq += side * side;
     }
 
-    const midRMS = Math.sqrt(sumMid / left.length);
-    const sideRMS = Math.sqrt(sumSide / left.length);
+    const midRMS = Math.sqrt(sumMidSq / left.length);
+    const sideRMS = Math.sqrt(sumSideSq / left.length);
     const total = midRMS + sideRMS;
 
     return {
-      midSideRatio: total > 0 ? midRMS / sideRMS : 1,
+      midSideRatio: sideRMS > 0 ? midRMS / sideRMS : 100, // Handle mono case
       sideContent: total > 0 ? (sideRMS / total) * 100 : 0,
     };
   }
@@ -1126,9 +1071,7 @@ export class AudioAnalysisService {
     channelData: Float32Array[]
   ): Promise<QualityMetrics> {
     const mono = this.convertToMono(channelData);
-
-    // Clipping detection
-    const clippingData = this.detectClipping(channelData);
+    const stats = this.analyzeBasicStats(channelData);
 
     // Noise floor
     const noiseFloor = this.calculateNoiseFloor(mono);
@@ -1136,66 +1079,39 @@ export class AudioAnalysisService {
     // SNR
     const snr = this.calculateSNR(mono, noiseFloor);
 
-    // DC offset
-    const { dcOffsetL, dcOffsetR } = this.calculateDCOffset(channelData);
-
     // Silent sections
     const silentSections = this.detectSilence(mono, audioBuffer.sampleRate);
 
+    const clippingPercentage = (stats.clippedSamples / stats.totalSamples) * 100;
+
     // Detect issues
     const issues = this.detectAudioIssues(
-      clippingData,
-      dcOffsetL,
-      dcOffsetR,
+      { clipping: stats.clippedSamples > 0, clippingPercentage, clippedSamples: stats.clippedSamples },
+      stats.dcOffsetL,
+      stats.dcOffsetR,
       noiseFloor,
       silentSections
     );
 
     // Calculate quality score
-    const qualityScore = this.calculateQualityScore(issues, clippingData, snr);
+    const qualityScore = this.calculateQualityScore(
+      issues,
+      { clipping: stats.clippedSamples > 0, clippingPercentage },
+      snr
+    );
 
     return {
-      clipping: clippingData.clipping,
-      clippedSamples: clippingData.clippedSamples,
-      clippingPercentage: clippingData.clippingPercentage,
+      clipping: stats.clippedSamples > 0,
+      clippedSamples: stats.clippedSamples,
+      clippingPercentage,
       noiseFloor,
       snr,
       bitDepthUtilization: 75,
-      dcOffsetL,
-      dcOffsetR,
+      dcOffsetL: stats.dcOffsetL,
+      dcOffsetR: stats.dcOffsetR,
       silentSections,
       qualityScore,
       issues,
-    };
-  }
-
-  /**
-   * Detect clipping
-   */
-  private detectClipping(channels: Float32Array[]): {
-    clipping: boolean;
-    clippedSamples: number;
-    clippingPercentage: number;
-  } {
-    const threshold = 0.99;
-    let clippedSamples = 0;
-    let totalSamples = 0;
-
-    for (const channel of channels) {
-      for (const sample of channel) {
-        if (Math.abs(sample) >= threshold) {
-          clippedSamples++;
-        }
-        totalSamples++;
-      }
-    }
-
-    const clippingPercentage = (clippedSamples / totalSamples) * 100;
-
-    return {
-      clipping: clippedSamples > 0,
-      clippedSamples,
-      clippingPercentage,
     };
   }
 
@@ -1227,28 +1143,68 @@ export class AudioAnalysisService {
   }
 
   /**
-   * Calculate DC offset
+   * Single-pass analysis for basic audio statistics
+   * ⚡ Bolt: Consolidates peak, RMS, DC offset, and clipping detection
    */
-  private calculateDCOffset(channels: Float32Array[]): {
-    dcOffsetL: number;
-    dcOffsetR: number;
-  } {
+  private analyzeBasicStats(channels: Float32Array[]): BasicAudioStats {
+    let peakL = 0;
+    let peakR = 0;
     let sumL = 0;
-    for (const sample of channels[0]) {
-      sumL += sample;
-    }
-    const dcOffsetL = sumL / channels[0].length;
+    let sumR = 0;
+    let sumSqL = 0;
+    let sumSqR = 0;
+    let sumSqMid = 0;
+    let sumSqSide = 0;
+    let clippedSamples = 0;
+    const numSamples = channels[0].length;
+    const hasRight = channels.length > 1;
 
-    let dcOffsetR = dcOffsetL;
-    if (channels.length > 1) {
-      let sumR = 0;
-      for (const sample of channels[1]) {
-        sumR += sample;
+    for (let i = 0; i < numSamples; i++) {
+      const sampleL = channels[0][i];
+      const absL = Math.abs(sampleL);
+      if (absL > peakL) peakL = absL;
+      sumL += sampleL;
+      sumSqL += sampleL * sampleL;
+      if (absL >= 0.99) clippedSamples++;
+
+      if (hasRight) {
+        const sampleR = channels[1][i];
+        const absR = Math.abs(sampleR);
+        if (absR > peakR) peakR = absR;
+        sumR += sampleR;
+        sumSqR += sampleR * sampleR;
+        if (absR >= 0.99) clippedSamples++;
+
+        // Mid/Side energy accumulation
+        const mid = (sampleL + sampleR) / 2;
+        const side = (sampleL - sampleR) / 2;
+        sumSqMid += mid * mid;
+        sumSqSide += side * side;
       }
-      dcOffsetR = sumR / channels[1].length;
     }
 
-    return { dcOffsetL, dcOffsetR };
+    if (!hasRight) {
+      peakR = peakL;
+      sumR = sumL;
+      sumSqR = sumSqL;
+      sumSqMid = sumSqL;
+      sumSqSide = 0;
+    }
+
+    const safeLog10 = (val: number) => val > 0 ? 20 * Math.log10(val) : -100;
+
+    return {
+      peakL: safeLog10(peakL),
+      peakR: safeLog10(peakR),
+      rmsL: safeLog10(Math.sqrt(sumSqL / numSamples)),
+      rmsR: safeLog10(Math.sqrt(sumSqR / numSamples)),
+      rmsMid: safeLog10(Math.sqrt(sumSqMid / numSamples)),
+      rmsSide: safeLog10(Math.sqrt(sumSqSide / numSamples)),
+      dcOffsetL: sumL / numSamples,
+      dcOffsetR: sumR / numSamples,
+      clippedSamples,
+      totalSamples: numSamples * channels.length,
+    };
   }
 
   /**
