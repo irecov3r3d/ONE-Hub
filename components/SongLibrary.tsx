@@ -1,14 +1,16 @@
 'use client';
 
 import type { Song } from '@/app/page';
-import AudioPlayer from './AudioPlayer';
-import { Music2 } from 'lucide-react';
+import { Music2, Play, Pause, AudioWaveform, Scissors, Image as ImageIcon, Download, Type } from 'lucide-react';
 
 interface SongLibraryProps {
   songs: Song[];
+  onPlay: (song: Song) => void;
+  activeSongId?: string;
+  onAction?: (song: Song, tab: any) => void;
 }
 
-export default function SongLibrary({ songs }: SongLibraryProps) {
+export default function SongLibrary({ songs, onPlay, activeSongId, onAction }: SongLibraryProps) {
   if (songs.length === 0) {
     return (
       <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-12 border border-white/10 text-center">
@@ -53,8 +55,76 @@ export default function SongLibrary({ songs }: SongLibraryProps) {
             </div>
           </div>
 
-          {/* Audio Player */}
-          <AudioPlayer song={song} />
+          {/* Controls & Actions */}
+          <div className="flex flex-col gap-3">
+            {/* Play/Pause Button */}
+            <button
+              onClick={() => onPlay(song)}
+              className={`
+                w-full py-3 rounded-lg flex items-center justify-center gap-2 transition-all
+                ${activeSongId === song.id
+                  ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20'
+                  : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                }
+              `}
+            >
+              {activeSongId === song.id ? (
+                <>
+                  <Pause className="w-5 h-5" fill="currentColor" />
+                  Playing...
+                </>
+              ) : (
+                <>
+                  <Play className="w-5 h-5" fill="currentColor" />
+                  Play Song
+                </>
+              )}
+            </button>
+
+            {/* Quick Actions */}
+            <div className="grid grid-cols-5 gap-2">
+              <button
+                onClick={() => onAction?.(song, 'waveform')}
+                className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors flex flex-col items-center gap-1"
+                title="Edit Audio"
+              >
+                <AudioWaveform className="w-4 h-4" />
+                <span className="text-[10px]">Edit</span>
+              </button>
+              <button
+                onClick={() => onAction?.(song, 'lyrics')}
+                className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors flex flex-col items-center gap-1"
+                title="Lyrics"
+              >
+                <Type className="w-4 h-4" />
+                <span className="text-[10px]">Lyrics</span>
+              </button>
+              <button
+                onClick={() => onAction?.(song, 'stems')}
+                className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors flex flex-col items-center gap-1"
+                title="Separate Stems"
+              >
+                <Scissors className="w-4 h-4" />
+                <span className="text-[10px]">Stems</span>
+              </button>
+              <button
+                onClick={() => onAction?.(song, 'albumart')}
+                className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors flex flex-col items-center gap-1"
+                title="Album Art"
+              >
+                <ImageIcon className="w-4 h-4" />
+                <span className="text-[10px]">Art</span>
+              </button>
+              <button
+                onClick={() => onAction?.(song, 'export')}
+                className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors flex flex-col items-center gap-1"
+                title="Export"
+              >
+                <Download className="w-4 h-4" />
+                <span className="text-[10px]">Export</span>
+              </button>
+            </div>
+          </div>
         </div>
       ))}
     </div>

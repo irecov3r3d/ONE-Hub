@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useRef, DragEvent } from 'react';
-import { Upload, X, Music, FileAudio, Mic, Sparkles, File } from 'lucide-react';
+import { Upload, X, Music, FileAudio, Mic, Sparkles, File, CheckCircle2, AudioWaveform, Scissors, ArrowRight } from 'lucide-react';
 import type { UploadedFile } from '@/types';
 
 interface FileUploadProps {
   onFilesUploaded: (files: UploadedFile[]) => void;
+  onNavigate?: (tab: any) => void;
   accept?: string;
   maxSize?: number; // in MB
   multiple?: boolean;
@@ -14,6 +15,7 @@ interface FileUploadProps {
 
 export default function FileUpload({
   onFilesUploaded,
+  onNavigate,
   accept = '.mp3,.wav,.ogg,.m4a,.flac,.txt',
   maxSize = 100,
   multiple = true,
@@ -22,6 +24,7 @@ export default function FileUpload({
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: DragEvent) => {
@@ -78,6 +81,9 @@ export default function FileUpload({
     setUploadedFiles(prev => [...prev, ...validFiles]);
     onFilesUploaded(validFiles);
     setUploading(false);
+    if (validFiles.length > 0) {
+      setShowSuccess(true);
+    }
   };
 
   const uploadFile = async (file: File, type: UploadedFile['type']): Promise<UploadedFile | null> => {
@@ -165,6 +171,47 @@ export default function FileUpload({
     const secs = Math.floor(seconds % 60);
     return `${mins}:${String(secs).padStart(2, '0')}`;
   };
+
+  if (showSuccess) {
+    return (
+      <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-8 border border-white/10 text-center">
+        <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+          <CheckCircle2 className="w-10 h-10 text-green-500" />
+        </div>
+        <h3 className="text-2xl font-bold text-white mb-2">Files Uploaded!</h3>
+        <p className="text-gray-400 mb-8">
+          Your files have been successfully uploaded and are ready for use.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+          <button
+            onClick={() => onNavigate?.('waveform')}
+            className="p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group"
+          >
+            <AudioWaveform className="w-8 h-8 text-purple-400 mx-auto mb-3 group-hover:scale-110 transition-transform" />
+            <span className="block text-sm font-medium text-white">Edit in Waveform</span>
+          </button>
+          <button
+            onClick={() => onNavigate?.('stems')}
+            className="p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group"
+          >
+            <Scissors className="w-8 h-8 text-blue-400 mx-auto mb-3 group-hover:scale-110 transition-transform" />
+            <span className="block text-sm font-medium text-white">Separate Stems</span>
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => setShowSuccess(false)}
+            className="w-full py-3 bg-purple-500 hover:bg-purple-600 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+          >
+            Upload More Files
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
