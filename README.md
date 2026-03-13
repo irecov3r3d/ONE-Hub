@@ -617,3 +617,11 @@ For questions, issues, or feature requests, please open an issue on GitHub.
 Built with ❤️ using Next.js and TypeScript
 
 **Ready to create amazing music? Run `npm run dev` and start your musical journey!** 🎶
+
+## Modules Organized
+
+- [Music Gen](./music-gen/)
+- [Stem Splitter](./stem-splitter/)
+- [Vocal AI Studio](./vocal-ai-studio/)
+- [Voice Memo Multi Track](./voice-memo-multi-track/)
+- [Chrome Extensions](./chrome-extensions/)

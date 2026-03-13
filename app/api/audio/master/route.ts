@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MasteringService } from '@/lib/services/masteringService';
+import { MasteringService } from '@/vocal-ai-studio/masteringService';
 
 export async function POST(request: NextRequest) {
   try {

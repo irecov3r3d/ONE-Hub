@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AudioService } from '@/lib/services/audioService';
+import { AudioService } from '@/vocal-ai-studio/audioService';
 import type { ExportSettings } from '@/types';
 
 export async function POST(request: NextRequest) {

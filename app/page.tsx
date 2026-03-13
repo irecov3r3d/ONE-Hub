@@ -14,15 +14,15 @@ import {
   Library,
   Mic,
 } from 'lucide-react';
-import SongGenerator from '@/components/SongGenerator';
+import SongGenerator from '@/music-gen/SongGenerator';
 import SongLibrary from '@/components/SongLibrary';
 import FileUpload from '@/components/FileUpload';
 import LyricEditor from '@/components/LyricEditor';
 import WaveformEditor from '@/components/WaveformEditor';
-import StemSeparator from '@/components/StemSeparator';
+import StemSeparator from '@/stem-splitter/StemSeparator';
 import AlbumArtGenerator from '@/components/AlbumArtGenerator';
 import ExportPanel from '@/components/ExportPanel';
-import VoiceMemoRecorder from '@/components/VoiceMemoRecorder';
+import VoiceMemoRecorder from '@/voice-memo-multi-track/VoiceMemoRecorder';
 import type { UploadedFile } from '@/types';
 
 export interface Song {
