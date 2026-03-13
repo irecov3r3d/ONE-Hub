@@ -4,13 +4,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AudioLines,
   AudioWaveform,
-  CassetteTape,
-  CirclePlus,
-  FastForward,
-  FolderLock,
-  Gauge,
-  Headphones,
-  Layers,
+  Scissors,
+  Download,
+  Image as ImageIcon,
+  Library,
+  Zap,
+  Mic,
+  Bot,
   Mic,
   Move,
   Pause,
@@ -22,9 +22,22 @@ import {
   Trash2,
   Wand2,
 } from 'lucide-react';
-import { deleteTrack, listTracks, saveTrack } from '@/lib/storage/trackStore';
+import SongGenerator from '@/components/SongGenerator';
+import SongLibrary from '@/components/SongLibrary';
+import FileUpload from '@/components/FileUpload';
+import LyricEditor from '@/components/LyricEditor';
+import WaveformEditor from '@/components/WaveformEditor';
+import StemSeparator from '@/components/StemSeparator';
+import AlbumArtGenerator from '@/components/AlbumArtGenerator';
+import ExportPanel from '@/components/ExportPanel';
+import BeatMaker from '@/components/BeatMaker';
+import VoiceController from '@/components/VoiceController';
+import AIAssistant from '@/components/AIAssistant';
+import type { UploadedFile, ParsedCommand } from '@/types';
+import VoiceMemoRecorder from '@/components/VoiceMemoRecorder';
+import type { UploadedFile } from '@/types';
 
-interface Track {
+export interface Song {
   id: string;
   name: string;
   createdAt: number;
@@ -35,251 +48,30 @@ interface Track {
   muted: boolean;
 }
 
-const emptySlots = Array.from({ length: 12 });
-const spectralBarCount = 20;
+type Tab =
+  | 'generate'
+  | 'beatmaker'
+  | 'upload'
+  | 'lyrics'
+  | 'waveform'
+  | 'stems'
+  | 'albumart'
+  | 'export'
+  | 'library'
+  | 'voice';
 
 export default function Home() {
-  const [workspace, setWorkspace] = useState<'recording' | 'mixing'>('recording');
-  const [spectralVisible, setSpectralVisible] = useState(false);
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [transportState, setTransportState] = useState<'stopped' | 'playing' | 'paused'>('stopped');
-  const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'saving'>('idle');
+  const [songs, setSongs] = useState<Song[]>([]);
+  const [activeTab, setActiveTab] = useState<Tab>('generate');
+  const [currentSong, setCurrentSong] = useState<Song | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [lyrics, setLyrics] = useState('');
+  const [showVoice, setShowVoice] = useState(true);
+  const [showAI, setShowAI] = useState(true);
 
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const masterGainRef = useRef<GainNode | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordChunksRef = useRef<Blob[]>([]);
-  const trackNodesRef = useRef<
-    Map<
-      string,
-      {
-        audio: HTMLAudioElement;
-        source: MediaElementAudioSourceNode;
-        gain: GainNode;
-        pan: StereoPannerNode;
-      }
-    >
-  >(new Map());
-
-  const sessionDuration = useMemo(
-    () => tracks.reduce((max, track) => Math.max(max, track.duration), 0),
-    [tracks],
-  );
-  const timelineSlots = useMemo(() => {
-    const filled = tracks.slice(0, 12);
-    const emptyCount = Math.max(0, 12 - filled.length);
-    return [...filled, ...emptySlots.slice(0, emptyCount).map(() => null)];
-  }, [tracks]);
-
-  useEffect(() => {
-    let mounted = true;
-    listTracks()
-      .then(savedTracks => {
-        if (!mounted) return;
-        const nextTracks = savedTracks.map(track => ({
-          id: track.id,
-          name: track.name,
-          createdAt: track.createdAt,
-          duration: track.duration,
-          blobUrl: URL.createObjectURL(track.blob),
-          pan: 0,
-          gain: 0.9,
-          muted: false,
-        }));
-        setTracks(nextTracks);
-      })
-      .catch(() => {});
-
-    return () => {
-      mounted = false;
-      setTracks(prev => {
-        prev.forEach(track => URL.revokeObjectURL(track.blobUrl));
-        return prev;
-      });
-      trackNodesRef.current.forEach(node => {
-        node.audio.pause();
-        node.audio.src = '';
-        node.source.disconnect();
-        node.gain.disconnect();
-        node.pan.disconnect();
-      });
-      trackNodesRef.current.clear();
-      audioContextRef.current?.close();
-    };
-  }, []);
-
-
-  const ensureAudioContext = () => {
-    if (audioContextRef.current) return audioContextRef.current;
-    const context = new AudioContext();
-    const masterGain = context.createGain();
-    masterGain.gain.value = 0.9;
-    const analyser = context.createAnalyser();
-    analyser.fftSize = 1024;
-    masterGain.connect(analyser);
-    analyser.connect(context.destination);
-    audioContextRef.current = context;
-    masterGainRef.current = masterGain;
-    analyserRef.current = analyser;
-    return context;
-  };
-
-  const attachTrackNodes = (track: Track) => {
-    const context = ensureAudioContext();
-    const masterGain = masterGainRef.current;
-    if (!masterGain || trackNodesRef.current.has(track.id)) return;
-    const audio = new Audio(track.blobUrl);
-    audio.preload = 'auto';
-    audio.onended = () => {
-      const allEnded = Array.from(trackNodesRef.current.values()).every(node =>
-        node.audio.paused,
-      );
-      if (allEnded) {
-        setTransportState('stopped');
-      }
-    };
-    const source = context.createMediaElementSource(audio);
-    const pan = context.createStereoPanner();
-    const gain = context.createGain();
-    pan.pan.value = track.pan;
-    gain.gain.value = track.muted ? 0 : track.gain;
-    source.connect(pan).connect(gain).connect(masterGain);
-    trackNodesRef.current.set(track.id, { audio, source, gain, pan });
-  };
-
-  const handleRecordToggle = async () => {
-    if (recordingState === 'recording') {
-      mediaRecorderRef.current?.stop();
-      setRecordingState('saving');
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      ensureAudioContext();
-      recordChunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
-      recorder.ondataavailable = event => {
-        if (event.data.size > 0) {
-          recordChunksRef.current.push(event.data);
-        }
-      };
-      recorder.onstop = async () => {
-        const blob = new Blob(recordChunksRef.current, { type: 'audio/webm' });
-        const context = ensureAudioContext();
-        const arrayBuffer = await blob.arrayBuffer();
-        const audioBuffer = await context.decodeAudioData(arrayBuffer.slice(0));
-        const savedTrack = await saveTrack({
-          name: `Take ${tracks.length + 1}`,
-          createdAt: Date.now(),
-          duration: audioBuffer.duration,
-          blob,
-        });
-        const blobUrl = URL.createObjectURL(blob);
-        setTracks(prev => [
-          {
-            id: savedTrack.id,
-            name: savedTrack.name,
-            createdAt: savedTrack.createdAt,
-            duration: savedTrack.duration,
-            blobUrl,
-            pan: 0,
-            gain: 0.9,
-            muted: false,
-          },
-          ...prev,
-        ]);
-        stream.getTracks().forEach(track => track.stop());
-        setRecordingState('idle');
-      };
-      mediaRecorderRef.current = recorder;
-      recorder.start();
-      setRecordingState('recording');
-    } catch {
-      setRecordingState('idle');
-    }
-  };
-
-  const handlePlay = async (startTime: number) => {
-    if (tracks.length === 0) return;
-    const context = ensureAudioContext();
-    await context.resume();
-    tracks.forEach(track => attachTrackNodes(track));
-    trackNodesRef.current.forEach(node => {
-      node.audio.currentTime = startTime;
-      node.audio.play();
-    });
-    setTransportState('playing');
-  };
-
-  const handlePause = () => {
-    trackNodesRef.current.forEach(node => node.audio.pause());
-    setTransportState('paused');
-  };
-
-  const handleRewind = () => {
-    trackNodesRef.current.forEach(node => {
-      node.audio.pause();
-      node.audio.currentTime = 0;
-    });
-    setTransportState('stopped');
-  };
-
-  const handleFastForward = () => {
-    trackNodesRef.current.forEach(node => {
-      const nextTime = Math.min(sessionDuration, node.audio.currentTime + 5);
-      node.audio.currentTime = nextTime;
-    });
-  };
-
-  const handleScrub = (value: number) => {
-    trackNodesRef.current.forEach(node => {
-      node.audio.currentTime = value;
-    });
-  };
-
-  const handleTrackPan = (trackId: string, value: number) => {
-    const track = tracks.find(item => item.id === trackId);
-    if (track) {
-      attachTrackNodes(track);
-    }
-    setTracks(prev =>
-      prev.map(track => (track.id === trackId ? { ...track, pan: value } : track)),
-    );
-    const node = trackNodesRef.current.get(trackId);
-    if (node) {
-      node.pan.pan.value = value;
-    }
-  };
-
-  const handleTrackGain = (trackId: string, value: number) => {
-    const track = tracks.find(item => item.id === trackId);
-    if (track) {
-      attachTrackNodes(track);
-    }
-    setTracks(prev =>
-      prev.map(track => (track.id === trackId ? { ...track, gain: value } : track)),
-    );
-    const node = trackNodesRef.current.get(trackId);
-    if (node) {
-      node.gain.gain.value = track?.muted ? 0 : value;
-    }
-  };
-
-  const handleTrackMute = (trackId: string) => {
-    const track = tracks.find(item => item.id === trackId);
-    if (!track) return;
-    attachTrackNodes(track);
-    const nextMuted = !track.muted;
-    setTracks(prev =>
-      prev.map(item =>
-        item.id === trackId ? { ...item, muted: nextMuted } : item,
-      ),
-    );
-    const node = trackNodesRef.current.get(trackId);
-    if (node) {
-      node.gain.gain.value = nextMuted ? 0 : track.gain;
-    }
+  const handleSongGenerated = (song: Song) => {
+    setSongs(prev => [song, ...prev]);
+    setCurrentSong(song);
   };
 
   const handleMasterOutput = (value: number) => {
@@ -289,61 +81,83 @@ export default function Home() {
     }
   };
 
-  const handleDeleteTrack = async (trackId: string) => {
-    await deleteTrack(trackId);
-    const node = trackNodesRef.current.get(trackId);
-    if (node) {
-      node.audio.pause();
-      node.audio.src = '';
-      node.source.disconnect();
-      node.gain.disconnect();
-      node.pan.disconnect();
-      trackNodesRef.current.delete(trackId);
+  const handleVoiceCommand = (command: ParsedCommand) => {
+    console.log('Voice command received:', command);
+
+    // Navigate to tabs
+    if (command.action === 'navigate_to_tab') {
+      const tab = command.parameters.tab as Tab;
+      if (tab) setActiveTab(tab);
+    } else if (command.action === 'navigate_to_beat_maker') {
+      setActiveTab('beatmaker');
+    } else if (command.action === 'play_audio') {
+      // Trigger play on current audio
+      console.log('Play audio command');
+    } else if (command.action === 'stop_audio') {
+      // Trigger stop on current audio
+      console.log('Stop audio command');
+    } else if (command.action === 'generate_song') {
+      setActiveTab('generate');
+      // TODO: Auto-fill form with command parameters
     }
-    setTracks(prev => {
-      const track = prev.find(item => item.id === trackId);
-      if (track) {
-        URL.revokeObjectURL(track.blobUrl);
-      }
-      return prev.filter(item => item.id !== trackId);
-    });
+
+    // Add more command handling as needed
   };
 
+  const tabs = [
+    { id: 'generate' as Tab, label: 'Generate', icon: Sparkles },
+    { id: 'beatmaker' as Tab, label: 'Beat Maker', icon: Zap },
+    { id: 'upload' as Tab, label: 'Upload', icon: Upload },
+    { id: 'lyrics' as Tab, label: 'Lyrics', icon: Type },
+    { id: 'waveform' as Tab, label: 'Editor', icon: AudioWaveform },
+    { id: 'stems' as Tab, label: 'Stems', icon: Scissors },
+    { id: 'albumart' as Tab, label: 'Album Art', icon: ImageIcon },
+    { id: 'export' as Tab, label: 'Export', icon: Download },
+    { id: 'library' as Tab, label: 'Library', icon: Library },
+    { id: 'voice' as Tab, label: 'Voice Memo', icon: Mic },
+  ];
+
   return (
-    <main className="min-h-screen bg-gradient-to-br from-purple-950 via-black to-blue-950 text-white">
-      <header className="border-b border-white/10 bg-black/40 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-6 flex flex-col gap-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+    <main className="min-h-screen bg-gradient-to-br from-purple-900 via-black to-blue-900">
+      {/* Header */}
+      <header className="border-b border-white/10 bg-black/30 backdrop-blur-md sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500">
-                <Mic className="w-8 h-8 text-white" />
+              <div className="p-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg">
+                <Music className="w-8 h-8 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold">Vault Voice Recorder Studio</h1>
-                <p className="text-purple-200 text-sm">
-                  Dub-track ready recorder, mixer, and lyric vault with pro-level
-                  processing.
+                <h1 className="text-3xl font-bold text-white">OnEstudiO</h1>
+                <p className="text-purple-300 text-sm">
+                  AI-Powered Music Production Suite
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Voice & AI Toggle */}
+            <div className="flex gap-2">
               <button
-                onClick={() => setWorkspace('recording')}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${workspace === 'recording'
-                  ? 'bg-purple-500'
-                  : 'bg-white/10 hover:bg-white/20'
+                onClick={() => setShowVoice(!showVoice)}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${
+                  showVoice
+                    ? 'bg-purple-500 text-white'
+                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
                 }`}
               >
-                Recording Room
+                <Mic size={16} />
+                Voice
               </button>
               <button
-                onClick={() => setWorkspace('mixing')}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${workspace === 'mixing'
-                  ? 'bg-purple-500'
-                  : 'bg-white/10 hover:bg-white/20'
+                onClick={() => setShowAI(!showAI)}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${
+                  showAI
+                    ? 'bg-purple-500 text-white'
+                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
                 }`}
               >
-                Mixing Room
+                <Bot size={16} />
+                AI Assistant
               </button>
             </div>
           </div>
@@ -362,15 +176,27 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-10 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        <section className="space-y-6">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-              <div>
-                <h2 className="text-xl font-semibold">Dub Track Timeline</h2>
-                <p className="text-gray-300 text-sm">
-                  12-track arranger with move, merge, fades, and bus routing.
-                </p>
+      <div className="max-w-7xl mx-auto px-4 py-12">
+        <div className="flex gap-6">
+          {/* Left Sidebar - Voice Control */}
+          {showVoice && (
+            <div className="w-80 flex-shrink-0">
+              <VoiceController onCommand={handleVoiceCommand} />
+            </div>
+          )}
+
+          {/* Main Content */}
+          <div className="flex-1">
+            {/* Beat Maker Tab */}
+            {activeTab === 'beatmaker' && <BeatMaker />}
+
+            {/* Generate Tab */}
+            {activeTab === 'generate' && (
+          <div className="max-w-2xl mx-auto">
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-5 h-5 text-yellow-400" />
+                <h2 className="text-2xl font-bold text-white">Create Your Song</h2>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -770,7 +596,27 @@ export default function Home() {
                 </div>
               </div>
             </div>
+            <SongLibrary songs={songs} />
+          </div>
+        )}
+          </div>
+
+          {/* Right Sidebar - AI Assistant */}
+          {showAI && (
+            <div className="w-96 flex-shrink-0">
+              <div className="sticky top-24 h-[calc(100vh-8rem)]">
+                <AIAssistant
+                  context={{
+                    activeTab,
+                    currentSong,
+                    songsCount: songs.length,
+                  }}
+                  className="h-full"
+                />
+              </div>
+            </div>
           )}
+        </div>
 
           <SpectralVisualizer
             analyserRef={analyserRef}
@@ -778,6 +624,15 @@ export default function Home() {
           />
         </aside>
       </div>
+
+      {/* Footer */}
+      <footer className="border-t border-white/10 bg-black/30 backdrop-blur-md mt-20">
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          <p className="text-center text-gray-500 text-sm">
+            OnEstudiO - AI-Powered Music Production Suite • Built with Next.js & Tone.js • Open Source
+          </p>
+        </div>
+      </footer>
     </main>
   );
 }

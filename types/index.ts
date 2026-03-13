@@ -174,460 +174,108 @@ export interface AlbumArtSettings {
   aspectRatio: '1:1' | '16:9' | '4:5';
 }
 
-// Comprehensive Audio Analysis Types
-
-export interface AudioAnalysisResult {
-  // File Information
-  fileInfo: AudioFileInfo;
-
-  // Temporal Analysis
-  temporal: TemporalAnalysis;
-
-  // Frequency Analysis
-  frequency: FrequencyAnalysis;
-
-  // Loudness & Dynamics
-  loudness: LoudnessAnalysis;
-
-  // Musical Features
-  musical: MusicalAnalysis;
-
-  // Stereo Field
-  stereo: StereoAnalysis;
-
-  // Harmonic Analysis
-  harmonic: HarmonicAnalysis;
-
-  // Spectral Data (for recreation)
-  spectral: SpectralData;
-
-  // Quality Metrics
-  quality: QualityMetrics;
-
-  // Mastering Suggestions
-  masteringSuggestions?: MasteringSuggestions;
+// Voice Interaction Types
+export interface VoiceCommand {
+  id: string;
+  transcript: string;
+  confidence: number;
+  timestamp: Date;
+  parsed?: ParsedCommand;
+  executed: boolean;
+  result?: any;
+  error?: string;
 }
 
-export interface AudioFileInfo {
-  fileName: string;
-  format: string;
-  duration: number; // seconds
-  sampleRate: number; // Hz
-  bitDepth: number; // bits
-  bitrate: number; // kbps
-  channels: number;
-  fileSize: number; // bytes
-  codec?: string;
-}
-
-export interface TemporalAnalysis {
-  bpm: number;
-  bpmConfidence: number; // 0-1
-  timeSignature: {
-    numerator: number;
-    denominator: number;
-    confidence: number;
-  };
-  beats: number[]; // beat timestamps in seconds
-  downbeats: number[]; // downbeat timestamps
-  sections: AudioSection[];
-  onsets: number[]; // onset detection timestamps
-}
-
-export interface AudioSection {
-  startTime: number;
-  endTime: number;
-  type: 'intro' | 'verse' | 'chorus' | 'bridge' | 'breakdown' | 'drop' | 'outro' | 'unknown';
-  energy: number; // 0-1
-  avgLoudness: number; // LUFS
-}
-
-export interface FrequencyAnalysis {
-  // Full spectrum breakdown
-  spectrum: FrequencyBand[];
-
-  // Frequency distribution
-  subBass: FrequencyBandDetail; // 20-60 Hz
-  bass: FrequencyBandDetail; // 60-250 Hz
-  lowMids: FrequencyBandDetail; // 250-500 Hz
-  mids: FrequencyBandDetail; // 500-2000 Hz
-  highMids: FrequencyBandDetail; // 2000-4000 Hz
-  presence: FrequencyBandDetail; // 4000-6000 Hz
-  brilliance: FrequencyBandDetail; // 6000-20000 Hz
-
-  // Spectral characteristics
-  spectralCentroid: number; // Hz - brightness indicator
-  spectralRolloff: number; // Hz
-  spectralFlux: number; // measure of change
-  spectralFlatness: number; // 0-1, noisiness indicator
-
-  // Peak frequencies
-  dominantFrequencies: DominantFrequency[];
-}
-
-export interface FrequencyBand {
-  frequency: number; // Hz
-  magnitude: number; // dB
-  phase: number; // radians
-}
-
-export interface FrequencyBandDetail {
-  range: [number, number]; // [min, max] Hz
-  avgMagnitude: number; // dB
-  peakMagnitude: number; // dB
-  rmsEnergy: number; // dB
-  percentage: number; // % of total energy
-}
-
-export interface DominantFrequency {
-  frequency: number; // Hz
-  magnitude: number; // dB
-  note?: string; // musical note (e.g., "A4")
-  harmonic?: number; // harmonic number if applicable
-}
-
-export interface LoudnessAnalysis {
-  // Integrated Loudness (EBU R128 / ITU-R BS.1770)
-  integratedLUFS: number;
-  loudnessRange: number; // LRA
-
-  // Momentary & Short-term
-  momentaryMaxLUFS: number;
-  shortTermMaxLUFS: number;
-
-  // Peak levels
-  truePeakL: number; // dBTP
-  truePeakR: number; // dBTP
-  truePeakMax: number; // dBTP
-
-  // RMS Levels
-  rmsL: number; // dB
-  rmsR: number; // dB
-  rmsMid: number; // dB
-  rmsSide: number; // dB
-
-  // Peak Levels (sample peak)
-  peakL: number; // dBFS
-  peakR: number; // dBFS
-
-  // Crest Factor
-  crestFactor: number; // dB
-
-  // Dynamic Range
-  dynamicRange: number; // dB
-
-  // Loudness over time
-  loudnessOverTime: LoudnessPoint[];
-}
-
-export interface LoudnessPoint {
-  time: number; // seconds
-  lufs: number;
-  peak: number; // dBFS
-}
-
-export interface MusicalAnalysis {
-  // Key detection
-  key: string; // e.g., "C Major", "A Minor"
-  keyConfidence: number; // 0-1
-
-  // Scale/Mode
-  scale: string; // e.g., "Major", "Minor", "Dorian"
-
-  // Tempo variations
-  tempoStability: number; // 0-1
-  tempoChanges: TempoChange[];
-
-  // Pitch content
-  pitchClasses: PitchClass[];
-
-  // Rhythm
-  rhythmComplexity: number; // 0-1
-  syncopation: number; // 0-1
-
-  // Energy & Mood
-  energy: number; // 0-1
-  danceability: number; // 0-1
-  valence: number; // 0-1 (musical positiveness)
-  acousticness: number; // 0-1
-  instrumentalness: number; // 0-1 (likelihood of no vocals)
-}
-
-export interface TempoChange {
-  time: number; // seconds
-  bpm: number;
+export interface ParsedCommand {
+  intent: VoiceIntent;
+  action: string;
+  parameters: Record<string, any>;
+  target?: string; // What component/feature to control
   confidence: number;
 }
 
-export interface PitchClass {
-  note: string; // "C", "C#", "D", etc.
-  strength: number; // 0-1
-  frequency: number; // Hz
+export type VoiceIntent =
+  | 'generate'
+  | 'edit'
+  | 'play'
+  | 'stop'
+  | 'navigate'
+  | 'adjust'
+  | 'export'
+  | 'query'
+  | 'help'
+  | 'beat-maker'
+  | 'unknown';
+
+export interface VoiceSettings {
+  enabled: boolean;
+  language: string;
+  continuous: boolean;
+  interimResults: boolean;
+  autoStart: boolean;
+  feedback: 'visual' | 'audio' | 'both' | 'none';
 }
 
-export interface StereoAnalysis {
-  // Stereo Width
-  stereoWidth: number; // 0-200% (100% = normal)
-
-  // Correlation
-  phaseCorrelation: number; // -1 to +1 (1 = mono, 0 = stereo, -1 = out of phase)
-
-  // Balance
-  panBalance: number; // -100 to +100 (0 = centered)
-
-  // Mid/Side Analysis
-  midSideRatio: number;
-  sideContent: number; // % of side signal
-
-  // Spatial characteristics
-  stereoField: StereoField[];
-}
-
-export interface StereoField {
-  frequency: number; // Hz
-  width: number; // stereo width at this frequency
-  correlation: number; // phase correlation
-}
-
-export interface HarmonicAnalysis {
-  // Fundamental frequency
-  fundamentalFreq: number; // Hz
-
-  // Harmonics
-  harmonics: Harmonic[];
-
-  // Harmonic characteristics
-  harmonicToNoiseRatio: number; // dB
-  thd: number; // Total Harmonic Distortion %
-
-  // Inharmonicity
-  inharmonicity: number; // 0-1
-
-  // Timbre
-  spectralContrast: number[];
-  mfcc: number[]; // Mel-frequency cepstral coefficients
-}
-
-export interface Harmonic {
-  number: number; // harmonic number (1 = fundamental)
-  frequency: number; // Hz
-  magnitude: number; // dB
-  phase: number; // radians
-}
-
-export interface SpectralData {
-  // Time-frequency representation
-  spectrogram: SpectrogramData;
-
-  // Detailed frequency bins for reconstruction
-  frequencyBins: FrequencyBin[];
-
-  // Window size and overlap used
-  fftSize: number;
-  hopSize: number;
-  windowType: string;
-
-  // Sampling info
-  sampleRate: number;
-  nyquistFreq: number;
-}
-
-export interface SpectrogramData {
-  times: number[]; // time axis in seconds
-  frequencies: number[]; // frequency axis in Hz
-  magnitudes: number[][]; // 2D array [time][frequency]
-  phases?: number[][]; // phase information for reconstruction
-}
-
-export interface FrequencyBin {
-  frequency: number;
-  magnitude: number;
-  phase: number;
-  time: number;
-}
-
-export interface QualityMetrics {
-  // Clipping detection
-  clipping: boolean;
-  clippedSamples: number;
-  clippingPercentage: number;
-
-  // Noise floor
-  noiseFloor: number; // dBFS
-
-  // Signal-to-Noise Ratio
-  snr: number; // dB
-
-  // Bit depth utilization
-  bitDepthUtilization: number; // %
-
-  // DC Offset
-  dcOffsetL: number;
-  dcOffsetR: number;
-
-  // Gaps/Silence
-  silentSections: SilentSection[];
-
-  // Overall quality score
-  qualityScore: number; // 0-100
-
-  // Issues detected
-  issues: AudioIssue[];
-}
-
-export interface SilentSection {
-  startTime: number;
-  endTime: number;
-  duration: number;
-  threshold: number; // dBFS
-}
-
-export interface AudioIssue {
-  type: 'clipping' | 'dc-offset' | 'phase-issues' | 'noise' | 'low-bitdepth' | 'silence';
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  description: string;
-  location?: number; // time in seconds
-  suggestion?: string;
-}
-
-export interface MasteringSuggestions {
-  // Recommended processing
-  needsNormalization: boolean;
-  targetLUFS: number;
-
-  // EQ Suggestions
-  eqSuggestions: EQSuggestion[];
-
-  // Compression
-  compressionSuggestion?: CompressionSuggestion;
-
-  // Limiting
-  limitingSuggestion?: LimitingSuggestion;
-
-  // Stereo enhancement
-  stereoEnhancement?: StereoEnhancement;
-
-  // Overall recommendations
-  recommendations: string[];
-}
-
-export interface EQSuggestion {
-  frequency: number; // Hz
-  type: 'bell' | 'shelf' | 'highpass' | 'lowpass' | 'notch';
-  gain: number; // dB
-  q: number; // Q factor
-  reason: string;
-}
-
-export interface CompressionSuggestion {
-  threshold: number; // dB
-  ratio: number;
-  attack: number; // ms
-  release: number; // ms
-  knee: number; // dB
-  makeupGain: number; // dB
-  reason: string;
-}
-
-export interface LimitingSuggestion {
-  threshold: number; // dB
-  ceiling: number; // dB
-  release: number; // ms
-  reason: string;
-}
-
-export interface StereoEnhancement {
-  widthAdjustment: number; // % change
-  midSideProcessing: boolean;
-  reason: string;
-}
-
-// Mastering Tool Settings
-
-export interface MasteringSettings {
-  // Target loudness
-  targetLUFS: number;
-  truePeakLimit: number; // dBTP
-
-  // EQ Chain
-  eqBands: EQBand[];
-
-  // Dynamics Processing
-  compression: CompressionSettings[];
-  limiting: LimiterSettings;
-
-  // Stereo Processing
-  stereoWidth: number; // %
-  midSideProcessing: MidSideSettings;
-
-  // Enhancement
-  exciter?: ExciterSettings;
-  saturation?: SaturationSettings;
-
-  // Dithering (for bit depth reduction)
-  dithering?: DitheringSettings;
-}
-
-export interface EQBand {
+export interface AIAssistantMessage {
   id: string;
-  enabled: boolean;
-  frequency: number; // Hz
-  gain: number; // dB
-  q: number;
-  type: 'bell' | 'lowShelf' | 'highShelf' | 'lowPass' | 'highPass' | 'notch';
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: Date;
+  context?: Record<string, any>;
+  suggestions?: string[];
 }
 
-export interface CompressionSettings {
+export interface AIAssistantState {
+  messages: AIAssistantMessage[];
+  isListening: boolean;
+  isSpeaking: boolean;
+  isProcessing: boolean;
+  currentContext: Record<string, any>;
+}
+
+// Beat Maker Types
+export interface BeatPattern {
   id: string;
-  enabled: boolean;
-  threshold: number; // dB
-  ratio: number;
-  attack: number; // ms
-  release: number; // ms
-  knee: number; // dB
-  makeupGain: number; // dB
-  sidechain?: SidechainSettings;
+  name: string;
+  section: 'verse' | 'chorus' | 'bridge' | 'intro' | 'outro';
+  events: BeatEvent[];
+  duration: string; // Tone.js time format (e.g., '1m', '4n')
+  bpm: number;
 }
 
-export interface LimiterSettings {
-  enabled: boolean;
-  threshold: number; // dB
-  ceiling: number; // dB
-  release: number; // ms
-  lookahead: number; // ms
-  oversampling: number; // 1x, 2x, 4x, 8x
+export interface BeatEvent {
+  time: string; // Tone.js time format (e.g., '0:0:0', '0:1:2')
+  instrument: BeatInstrument;
+  note?: string; // For melodic instruments
+  velocity?: number;
+  duration?: string;
 }
 
-export interface MidSideSettings {
-  enabled: boolean;
-  midGain: number; // dB
-  sideGain: number; // dB
-  stereoWidth: number; // %
+export type BeatInstrument =
+  | 'kick'
+  | 'snare'
+  | 'hihat'
+  | 'openHat'
+  | 'clap'
+  | 'rim'
+  | 'bass'
+  | 'subBass'
+  | 'melody'
+  | 'lead'
+  | 'pad'
+  | 'pluck';
+
+export interface BeatMakerState {
+  isPlaying: boolean;
+  bpm: number;
+  volume: number;
+  currentSection: 'verse' | 'chorus' | 'bridge';
+  patterns: Record<string, BeatPattern>;
+  activePattern: string;
 }
 
-export interface SidechainSettings {
-  enabled: boolean;
-  sourceFrequency?: number; // Hz for frequency-specific sidechain
-  filterType?: 'lowpass' | 'highpass' | 'bandpass';
-}
-
-export interface ExciterSettings {
-  enabled: boolean;
-  amount: number; // %
-  harmonics: number; // 2nd, 3rd, etc.
-  mix: number; // %
-}
-
-export interface SaturationSettings {
-  enabled: boolean;
-  type: 'tape' | 'tube' | 'transistor' | 'digital';
-  drive: number; // %
-  mix: number; // %
-}
-
-export interface DitheringSettings {
-  enabled: boolean;
-  type: 'triangular' | 'shaped' | 'none';
-  depth: 16 | 24;
-  noiseShaping: boolean;
+export interface BeatExportOptions {
+  format: 'audio' | 'midi' | 'pattern-json';
+  quality?: string;
+  includeMetadata: boolean;
 }

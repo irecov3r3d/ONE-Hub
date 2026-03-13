@@ -12,7 +12,9 @@
     "next": "^15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "lucide-react": "^0.469.0"
+    "lucide-react": "^0.469.0",
+    "tone": "^15.0.4",
+    "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@types/node": "^22",
