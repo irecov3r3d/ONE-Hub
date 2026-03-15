@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini Popup</title>
+  <link rel="stylesheet" href="styles/popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h2>Gemini Quick Help</h2>
+      <button id="openSidePanel" title="Open Sidebar">➡️</button>
+    </header>
+
+    <div class="tabs">
+      <button id="quickChatTab" class="active">Quick Chat</button>
+      <button id="optimizerTab">Prompt Optimizer</button>
+    </div>
+
+    <div id="quickChatView" class="view">
+      <textarea id="quickInput" placeholder="Ask a quick question..."></textarea>
+      <button id="quickSend" class="action-btn">Send to Gemini</button>
+      <div id="quickResult" class="result-area hidden"></div>
+    </div>
+
+    <div id="optimizerView" class="view hidden">
+      <p class="description">Turn your "everyday language" into a professional AI prompt.</p>
+      <textarea id="optInput" placeholder="Enter your draft prompt..."></textarea>
+      <button id="optimizeBtn" class="action-btn">Optimize</button>
+      <div id="optResult" class="result-area hidden">
+        <textarea id="optimizedText" readonly></textarea>
+        <button id="copyBtn">Copy to Clipboard</button>
+      </div>
+    </div>
+
+    <div id="status"></div>
+  </div>
+
+  <script src="scripts/popup.js"></script>
+</body>
+</html>

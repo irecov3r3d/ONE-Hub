@@ -1,0 +1,67 @@
+{
+  "manifest_version": 2,
+  "name": "Teach & Repeat - AI Macro Recorder",
+  "version": "1.0.0",
+  "description": "Record browser actions and replay them across multiple AI chat interfaces. Teach it once, repeat forever.",
+  "author": "ONE-Hub",
+  "homepage_url": "https://github.com/irecov3r3d/ONE-Hub",
+
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "clipboardRead",
+    "clipboardWrite",
+    "<all_urls>"
+  ],
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "teach-repeat@one-hub.local",
+      "strict_min_version": "91.0"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
+  },
+
+  "browser_action": {
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    },
+    "default_title": "Teach & Repeat",
+    "default_popup": "popup/popup.html"
+  },
+
+  "background": {
+    "scripts": ["background/background.js"],
+    "persistent": true
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/recorder.js", "content/player.js", "content/ai-chat.js"],
+      "css": ["content/overlay.css"],
+      "run_at": "document_end",
+      "all_frames": true
+    }
+  ],
+
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+
+  "web_accessible_resources": [
+    "icons/*",
+    "content/overlay.css"
+  ]
+}

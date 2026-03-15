@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ONE-Hub Music Generator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1 class="title">🎵 ONE-Hub</h1>
+      <p class="subtitle">AI Music Generator</p>
+      <button id="settingsBtn" class="settings-btn" title="Settings">⚙️</button>
+    </div>
+
+    <!-- Main Content -->
+    <div class="content">
+      <!-- Prompt Input -->
+      <div class="section">
+        <label for="prompt" class="label">Describe Your Song</label>
+        <textarea
+          id="prompt"
+          class="input textarea"
+          placeholder="e.g., An upbeat electronic dance track with energetic synths and pulsing bass..."
+          rows="4"
+        ></textarea>
+      </div>
+
+      <!-- Genre Selection -->
+      <div class="section">
+        <label for="genre" class="label">Genre</label>
+        <select id="genre" class="input select">
+          <option value="pop">Pop</option>
+          <option value="rock">Rock</option>
+          <option value="hip-hop">Hip Hop</option>
+          <option value="electronic">Electronic</option>
+          <option value="jazz">Jazz</option>
+          <option value="classical">Classical</option>
+          <option value="rnb">R&B</option>
+          <option value="country">Country</option>
+          <option value="metal">Metal</option>
+          <option value="indie">Indie</option>
+          <option value="folk">Folk</option>
+          <option value="latin">Latin</option>
+        </select>
+      </div>
+
+      <!-- Mood Selection -->
+      <div class="section">
+        <label for="mood" class="label">Mood</label>
+        <select id="mood" class="input select">
+          <option value="happy">Happy</option>
+          <option value="sad">Sad</option>
+          <option value="energetic">Energetic</option>
+          <option value="chill">Chill</option>
+          <option value="romantic">Romantic</option>
+          <option value="angry">Angry</option>
+          <option value="peaceful">Peaceful</option>
+          <option value="dark">Dark</option>
+          <option value="uplifting">Uplifting</option>
+          <option value="mysterious">Mysterious</option>
+          <option value="nostalgic">Nostalgic</option>
+          <option value="epic">Epic</option>
+        </select>
+      </div>
+
+      <!-- Duration Selection -->
+      <div class="section">
+        <label for="duration" class="label">Duration (seconds)</label>
+        <div class="duration-control">
+          <input
+            type="range"
+            id="duration"
+            class="slider"
+            min="30"
+            max="300"
+            value="120"
+          >
+          <span id="durationValue" class="duration-value">120s</span>
+        </div>
+      </div>
+
+      <!-- Model Strategy Selection -->
+      <div class="section">
+        <label for="strategy" class="label">Quality Strategy</label>
+        <select id="strategy" class="input select">
+          <option value="fastest">Fastest (~30s, $0.03)</option>
+          <option value="best-quality">Best Quality (~45s, $0.05)</option>
+          <option value="ensemble-top3" selected>Ensemble Top 3 (~2-3min, $0.15)</option>
+          <option value="ensemble-all">Ensemble All (~3-5min, $0.20+)</option>
+          <option value="adaptive">Adaptive (AI-selected)</option>
+        </select>
+      </div>
+
+      <!-- Generate Button -->
+      <button id="generateBtn" class="btn btn-primary">
+        <span id="btnText">🎼 Generate Music</span>
+        <span id="btnLoader" class="loader hidden"></span>
+      </button>
+
+      <!-- Status Message -->
+      <div id="status" class="status hidden"></div>
+
+      <!-- Progress Info -->
+      <div id="progressInfo" class="progress-info hidden">
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <p id="progressText" class="progress-text"></p>
+      </div>
+
+      <!-- Result Section -->
+      <div id="result" class="result hidden">
+        <h3 class="result-title">✨ Your Music is Ready!</h3>
+        <div class="audio-player">
+          <audio id="audioPlayer" controls class="audio-controls"></audio>
+        </div>
+        <div class="result-info">
+          <p><strong>Model:</strong> <span id="modelName"></span></p>
+          <p><strong>Quality Score:</strong> <span id="qualityScore"></span></p>
+          <p><strong>Generation Time:</strong> <span id="genTime"></span></p>
+          <p><strong>Cost:</strong> <span id="genCost"></span></p>
+        </div>
+        <div class="result-actions">
+          <button id="downloadBtn" class="btn btn-secondary">💾 Download</button>
+          <button id="openFullBtn" class="btn btn-secondary">🚀 Open Full App</button>
+        </div>
+      </div>
+
+      <!-- Library Link -->
+      <div class="footer">
+        <button id="libraryBtn" class="link-btn">📚 View Your Library</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
