@@ -1,5 +1,5 @@
 // Generate Screen - Main song generation interface
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,10 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
-import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
+import Voice, { type SpeechErrorEvent, type SpeechResultsEvent } from '@react-native-voice/voice';
 import { useStore } from '../../store/useStore';
 import { generateSong } from '../../services/api';
 import type { Song, GenerateSongRequest } from '../../services/api';
@@ -27,63 +28,75 @@ const STRATEGIES = [
 ];
 
 export default function GenerateScreen() {
+  const { width } = useWindowDimensions();
+  const isCompact = width <= 375;
   const [prompt, setPrompt] = useState('');
   const [selectedGenre, setSelectedGenre] = useState('Pop');
   const [selectedMood, setSelectedMood] = useState('Happy');
   const [duration, setDuration] = useState(120); // Default 2 minutes
   const [selectedStrategy, setSelectedStrategy] = useState('ensemble-top3');
-  const [isRecording, setIsRecording] = useState(false);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isDictating, setIsDictating] = useState(false);
+  const [dictationError, setDictationError] = useState<string | null>(null);
+  const dictationBasePrompt = useRef('');
 
   const { isGenerating, generationProgress, setGenerating, setGenerationProgress, addSong, settings } =
     useStore();
 
   useEffect(() => {
-    // Request microphone permissions on mount
-    (async () => {
-      if (Platform.OS !== 'web') {
-        const { status } = await Audio.requestPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Permission required', 'Microphone access is needed for voice input');
-        }
-      }
-    })();
+    if (Platform.OS === 'web') {
+      return;
+    }
+
+    const handleSpeechResults = (event: SpeechResultsEvent) => {
+      const transcript = event.value?.[0]?.trim() ?? '';
+      const base = dictationBasePrompt.current.trim();
+      const combinedPrompt = [base, transcript].filter(Boolean).join(' ');
+      setPrompt(combinedPrompt);
+    };
+
+    const handleSpeechError = (event: SpeechErrorEvent) => {
+      setIsDictating(false);
+      setDictationError(event.error?.message ?? 'Dictation failed. Please try again.');
+    };
+
+    Voice.onSpeechPartialResults = handleSpeechResults;
+    Voice.onSpeechResults = handleSpeechResults;
+    Voice.onSpeechEnd = () => setIsDictating(false);
+    Voice.onSpeechError = handleSpeechError;
+
+    return () => {
+      Voice.destroy().then(Voice.removeAllListeners);
+    };
   }, []);
 
-  const startRecording = async () => {
+  const startDictation = async () => {
+    if (isDictating) return;
+    if (Platform.OS === 'web') {
+      Alert.alert('Dictation Unavailable', 'Dictation is only available on iOS or Android.');
+      return;
+    }
+
     try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-
-      setRecording(recording);
-      setIsRecording(true);
+      setDictationError(null);
+      dictationBasePrompt.current = prompt.trim();
+      setIsDictating(true);
+      await Voice.start('en-US');
     } catch (error) {
-      console.error('Failed to start recording:', error);
-      Alert.alert('Error', 'Failed to start recording');
+      console.error('Failed to start dictation:', error);
+      setIsDictating(false);
+      Alert.alert('Dictation Unavailable', 'Unable to start iOS dictation right now.');
     }
   };
 
-  const stopRecording = async () => {
-    if (!recording) return;
+  const stopDictation = async () => {
+    if (!isDictating) return;
 
     try {
-      setIsRecording(false);
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-
-      // TODO: Send audio to speech-to-text API
-      // For now, show placeholder
-      Alert.alert('Voice Input', 'Voice-to-text will be available soon!');
-
-      setRecording(null);
+      await Voice.stop();
     } catch (error) {
-      console.error('Failed to stop recording:', error);
+      console.error('Failed to stop dictation:', error);
+    } finally {
+      setIsDictating(false);
     }
   };
 
@@ -148,13 +161,15 @@ export default function GenerateScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Create Your Song</Text>
-        <Text style={styles.subtitle}>Describe what you want to hear</Text>
+        <Text style={[styles.title, isCompact && styles.titleCompact]}>Create Your Song</Text>
+        <Text style={[styles.subtitle, isCompact && styles.subtitleCompact]}>
+          Describe what you want to hear
+        </Text>
       </View>
 
       {/* Prompt Input */}
       <View style={styles.section}>
-        <Text style={styles.label}>Song Description</Text>
+        <Text style={[styles.label, isCompact && styles.labelCompact]}>Song Description</Text>
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
@@ -167,32 +182,54 @@ export default function GenerateScreen() {
             editable={!isGenerating}
           />
           <TouchableOpacity
-            style={[styles.voiceButton, isRecording && styles.voiceButtonActive]}
-            onPress={isRecording ? stopRecording : startRecording}
+            style={[styles.voiceButton, isDictating && styles.voiceButtonActive]}
+            onPress={isDictating ? stopDictation : startDictation}
             disabled={isGenerating}
           >
             <Ionicons
-              name={isRecording ? 'stop-circle' : 'mic'}
+              name={isDictating ? 'stop-circle' : 'mic'}
               size={24}
-              color={isRecording ? '#ef4444' : '#8b5cf6'}
+              color={isDictating ? '#ef4444' : '#8b5cf6'}
             />
           </TouchableOpacity>
         </View>
-        <Text style={styles.hint}>{prompt.length}/500 characters</Text>
+        <Text style={[styles.hint, isCompact && styles.hintCompact]}>
+          {prompt.length}/500 characters
+        </Text>
+        <Text style={[styles.dictationHint, isCompact && styles.dictationHintCompact]}>
+          {isDictating
+            ? 'Listening for dictation…'
+            : 'Tap the mic to dictate with iOS speech recognition.'}
+        </Text>
+        {dictationError ? (
+          <Text style={[styles.errorHint, isCompact && styles.errorHintCompact]}>
+            {dictationError}
+          </Text>
+        ) : null}
       </View>
 
       {/* Genre Selection */}
       <View style={styles.section}>
-        <Text style={styles.label}>Genre</Text>
+        <Text style={[styles.label, isCompact && styles.labelCompact]}>Genre</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pills}>
           {GENRES.map((genre) => (
             <TouchableOpacity
               key={genre}
-              style={[styles.pill, selectedGenre === genre && styles.pillActive]}
+              style={[
+                styles.pill,
+                isCompact && styles.pillCompact,
+                selectedGenre === genre && styles.pillActive,
+              ]}
               onPress={() => setSelectedGenre(genre)}
               disabled={isGenerating}
             >
-              <Text style={[styles.pillText, selectedGenre === genre && styles.pillTextActive]}>
+              <Text
+                style={[
+                  styles.pillText,
+                  isCompact && styles.pillTextCompact,
+                  selectedGenre === genre && styles.pillTextActive,
+                ]}
+              >
                 {genre}
               </Text>
             </TouchableOpacity>
@@ -202,16 +239,26 @@ export default function GenerateScreen() {
 
       {/* Mood Selection */}
       <View style={styles.section}>
-        <Text style={styles.label}>Mood</Text>
+        <Text style={[styles.label, isCompact && styles.labelCompact]}>Mood</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pills}>
           {MOODS.map((mood) => (
             <TouchableOpacity
               key={mood}
-              style={[styles.pill, selectedMood === mood && styles.pillActive]}
+              style={[
+                styles.pill,
+                isCompact && styles.pillCompact,
+                selectedMood === mood && styles.pillActive,
+              ]}
               onPress={() => setSelectedMood(mood)}
               disabled={isGenerating}
             >
-              <Text style={[styles.pillText, selectedMood === mood && styles.pillTextActive]}>
+              <Text
+                style={[
+                  styles.pillText,
+                  isCompact && styles.pillTextCompact,
+                  selectedMood === mood && styles.pillTextActive,
+                ]}
+              >
                 {mood}
               </Text>
             </TouchableOpacity>
@@ -221,16 +268,29 @@ export default function GenerateScreen() {
 
       {/* Duration Slider */}
       <View style={styles.section}>
-        <Text style={styles.label}>Duration: {duration}s ({Math.floor(duration / 60)}:{(duration % 60).toString().padStart(2, '0')})</Text>
+        <Text style={[styles.label, isCompact && styles.labelCompact]}>
+          Duration: {duration}s ({Math.floor(duration / 60)}:
+          {(duration % 60).toString().padStart(2, '0')})
+        </Text>
         <View style={styles.durationButtons}>
           {[30, 60, 90, 120, 180, 240, 300].map((dur) => (
             <TouchableOpacity
               key={dur}
-              style={[styles.durationButton, duration === dur && styles.durationButtonActive]}
+              style={[
+                styles.durationButton,
+                isCompact && styles.durationButtonCompact,
+                duration === dur && styles.durationButtonActive,
+              ]}
               onPress={() => setDuration(dur)}
               disabled={isGenerating}
             >
-              <Text style={[styles.durationButtonText, duration === dur && styles.durationButtonTextActive]}>
+              <Text
+                style={[
+                  styles.durationButtonText,
+                  isCompact && styles.durationButtonTextCompact,
+                  duration === dur && styles.durationButtonTextActive,
+                ]}
+              >
                 {dur >= 60 ? `${dur / 60}m` : `${dur}s`}
               </Text>
             </TouchableOpacity>
@@ -240,12 +300,13 @@ export default function GenerateScreen() {
 
       {/* Strategy Selection */}
       <View style={styles.section}>
-        <Text style={styles.label}>Generation Strategy</Text>
+        <Text style={[styles.label, isCompact && styles.labelCompact]}>Generation Strategy</Text>
         {STRATEGIES.map((strategy) => (
           <TouchableOpacity
             key={strategy.id}
             style={[
               styles.strategyCard,
+              isCompact && styles.strategyCardCompact,
               selectedStrategy === strategy.id && styles.strategyCardActive,
             ]}
             onPress={() => setSelectedStrategy(strategy.id)}
@@ -255,14 +316,19 @@ export default function GenerateScreen() {
               <Text
                 style={[
                   styles.strategyName,
+                  isCompact && styles.strategyNameCompact,
                   selectedStrategy === strategy.id && styles.strategyNameActive,
                 ]}
               >
                 {strategy.name}
               </Text>
               <View style={styles.strategyMeta}>
-                <Text style={styles.strategyMetaText}>⏱️ {strategy.time}</Text>
-                <Text style={styles.strategyMetaText}>💰 {strategy.cost}</Text>
+                <Text style={[styles.strategyMetaText, isCompact && styles.strategyMetaTextCompact]}>
+                  ⏱️ {strategy.time}
+                </Text>
+                <Text style={[styles.strategyMetaText, isCompact && styles.strategyMetaTextCompact]}>
+                  💰 {strategy.cost}
+                </Text>
               </View>
             </View>
             {selectedStrategy === strategy.id && (
@@ -274,21 +340,27 @@ export default function GenerateScreen() {
 
       {/* Generate Button */}
       <TouchableOpacity
-        style={[styles.generateButton, isGenerating && styles.generateButtonDisabled]}
+        style={[
+          styles.generateButton,
+          isCompact && styles.generateButtonCompact,
+          isGenerating && styles.generateButtonDisabled,
+        ]}
         onPress={handleGenerate}
         disabled={isGenerating}
       >
         {isGenerating ? (
           <View style={styles.generatingContainer}>
             <ActivityIndicator color="#fff" size="small" />
-            <Text style={styles.generateButtonText}>
+            <Text style={[styles.generateButtonText, isCompact && styles.generateButtonTextCompact]}>
               Generating... {Math.round(generationProgress * 100)}%
             </Text>
           </View>
         ) : (
           <>
             <Ionicons name="sparkles" size={24} color="#fff" />
-            <Text style={styles.generateButtonText}>Generate Song</Text>
+            <Text style={[styles.generateButtonText, isCompact && styles.generateButtonTextCompact]}>
+              Generate Song
+            </Text>
           </>
         )}
       </TouchableOpacity>
@@ -321,9 +393,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 8,
   },
+  titleCompact: {
+    fontSize: 26,
+  },
   subtitle: {
     fontSize: 16,
     color: '#999',
+  },
+  subtitleCompact: {
+    fontSize: 14,
   },
   section: {
     marginBottom: 30,
@@ -333,6 +411,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
     marginBottom: 12,
+  },
+  labelCompact: {
+    fontSize: 14,
+    marginBottom: 10,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -364,6 +446,25 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 8,
   },
+  hintCompact: {
+    fontSize: 11,
+  },
+  dictationHint: {
+    fontSize: 12,
+    color: '#8b5cf6',
+    marginTop: 6,
+  },
+  dictationHintCompact: {
+    fontSize: 11,
+  },
+  errorHint: {
+    fontSize: 12,
+    color: '#ef4444',
+    marginTop: 6,
+  },
+  errorHintCompact: {
+    fontSize: 11,
+  },
   pills: {
     flexDirection: 'row',
   },
@@ -376,6 +477,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
+  pillCompact: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
   pillActive: {
     backgroundColor: '#8b5cf6',
     borderColor: '#8b5cf6',
@@ -384,6 +489,9 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 14,
     fontWeight: '500',
+  },
+  pillTextCompact: {
+    fontSize: 12,
   },
   pillTextActive: {
     color: '#fff',
@@ -401,6 +509,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
+  durationButtonCompact: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
   durationButtonActive: {
     backgroundColor: '#8b5cf6',
     borderColor: '#8b5cf6',
@@ -409,6 +521,9 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 14,
     fontWeight: '500',
+  },
+  durationButtonTextCompact: {
+    fontSize: 12,
   },
   durationButtonTextActive: {
     color: '#fff',
@@ -424,6 +539,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
+  strategyCardCompact: {
+    padding: 12,
+  },
   strategyCardActive: {
     borderColor: '#8b5cf6',
     backgroundColor: '#8b5cf620',
@@ -437,6 +555,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 6,
   },
+  strategyNameCompact: {
+    fontSize: 14,
+  },
   strategyNameActive: {
     color: '#8b5cf6',
   },
@@ -448,6 +569,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
   },
+  strategyMetaTextCompact: {
+    fontSize: 11,
+  },
   generateButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -457,6 +581,9 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 10,
   },
+  generateButtonCompact: {
+    paddingVertical: 14,
+  },
   generateButtonDisabled: {
     backgroundColor: '#666',
   },
@@ -464,6 +591,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  generateButtonTextCompact: {
+    fontSize: 16,
   },
   generatingContainer: {
     flexDirection: 'row',

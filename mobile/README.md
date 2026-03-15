@@ -6,7 +6,7 @@ AI-powered music generation on iOS and Android using multi-model ensemble approa
 
 ### Core Functionality
 - **AI Song Generation**: Create professional music from text descriptions
-- **Voice Input**: Describe your song using voice-to-text
+- **iOS Dictation**: Describe your song using Apple's speech recognition
 - **Multi-Model Ensemble**: Uses 3+ AI models to generate the best quality
 - **Real-time Progress**: Live updates during generation
 - **Offline Library**: Songs stored locally for offline playback
@@ -250,6 +250,8 @@ npm run test:e2e:android
 ```xml
 <key>NSMicrophoneUsageDescription</key>
 <string>Record voice input for song descriptions</string>
+<key>NSSpeechRecognitionUsageDescription</key>
+<string>Convert dictation into song prompts</string>
 <key>NSUserTrackingUsageDescription</key>
 <string>Used to provide personalized recommendations</string>
 ```

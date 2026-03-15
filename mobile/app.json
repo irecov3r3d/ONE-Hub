@@ -17,6 +17,7 @@
       "bundleIdentifier": "com.songgenerator.pro",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "We need microphone access for voice-to-prompt generation",
+        "NSSpeechRecognitionUsageDescription": "We use speech recognition to convert dictation into song prompts",
         "NSUserTrackingUsageDescription": "We use analytics to improve your experience"
       },
       "buildNumber": "1"
