@@ -5,6 +5,7 @@ import type { FrequencyBand } from '@/types';
 
 export class FastFFTEngine {
   private audioContext: AudioContext;
+  private static hannWindowCache: Map<number, Float32Array> = new Map();
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
@@ -137,13 +138,24 @@ export class FastFFTEngine {
   }
 
   /**
-   * Apply Hann window to reduce spectral leakage
+   * Apply Hann window to reduce spectral leakage.
+   * ⚡ Bolt: Caches window coefficients to avoid redundant Math.cos calls.
    */
   public static applyHannWindow(samples: Float32Array): Float32Array {
-    const windowed = new Float32Array(samples.length);
-    for (let i = 0; i < samples.length; i++) {
-      const windowValue = 0.5 * (1 - Math.cos((2 * Math.PI * i) / samples.length));
-      windowed[i] = samples[i] * windowValue;
+    const n = samples.length;
+    let window = FastFFTEngine.hannWindowCache.get(n);
+
+    if (!window) {
+      window = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / n));
+      }
+      FastFFTEngine.hannWindowCache.set(n, window);
+    }
+
+    const windowed = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      windowed[i] = samples[i] * window[i];
     }
     return windowed;
   }

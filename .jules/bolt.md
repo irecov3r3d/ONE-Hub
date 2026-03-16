@@ -16,3 +16,11 @@
 ## 2025-05-15 - [Branch Audit]
 **Learning:** The repository contains many branches that appear to be independent projects (e.g., Firefox extensions, Linux Mint desktop environment, various separate apps).
 **Action:** Identified branches to be moved to separate repositories to maintain "Song Generator Pro" focus.
+
+## 2025-05-15 - [Consolidated Global Stats vs. Helper Traversals]
+**Learning:** Even after implementing a single-pass statistics loop, downstream analysis functions (Stereo, Musical Features) may still perform their own $O(N)$ traversals for metrics like Phase Correlation or Pan Balance. These can almost always be derived in $O(1)$ from global accumulated sums (e.g., $\sum L \cdot R$ and $\sum |L|$).
+**Action:** Always audit private helper methods for hidden $O(N)$ complexity and refactor them to consume the results of the primary statistics pass.
+
+## 2025-05-15 - [FFT Trigonometric Caching]
+**Learning:** Recomputing Hann window coefficients using `Math.cos` across thousands of FFT frames is a significant CPU bottleneck. Since FFT window sizes are deterministic (powers of 2), a static `Map` cache provides a measurable speedup with minimal memory overhead.
+**Action:** Implement static caches for window coefficients and trigonometric twiddle factors in DSP engines.
