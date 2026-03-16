@@ -40,6 +40,11 @@ interface BasicAudioStats {
   rmsSide: number;
   dcOffsetL: number;
   dcOffsetR: number;
+  absSumL: number;
+  absSumR: number;
+  sumLR: number;
+  sumSqL: number;
+  sumSqR: number;
   clippedSamples: number;
   totalSamples: number;
   length: number;
@@ -88,7 +93,7 @@ export class AudioAnalysisService {
       this.analyzeTemporalFeatures(audioBuffer, stats.mono),
       this.analyzeFrequency(audioBuffer, stats.mono),
       this.analyzeLoudness(audioBuffer, stats),
-      this.analyzeMusicalFeatures(audioBuffer, stats.mono),
+      this.analyzeMusicalFeatures(audioBuffer, stats),
       this.analyzeStereo(audioBuffer, channelData, stats),
       this.analyzeHarmonics(audioBuffer, channelData),
       this.generateSpectralData(audioBuffer, channelData),
@@ -134,6 +139,9 @@ export class AudioAnalysisService {
     let sumSqR = 0;
     let sumSqMid = 0;
     let sumSqSide = 0;
+    let absSumL = 0;
+    let absSumR = 0;
+    let sumLR = 0;
     let clippedSamples = 0;
     const clippingThreshold = 0.99;
 
@@ -161,7 +169,12 @@ export class AudioAnalysisService {
 
       // DC Offset accumulation
       sumL += sL;
-      if (hasRight) sumR += sR;
+      absSumL += absL;
+      if (hasRight) {
+        sumR += sR;
+        absSumR += absR;
+        sumLR += sL * sR;
+      }
 
       // Energy accumulation for RMS (Mid/Side corrected per ITU-R BS.1770)
       sumSqL += sL * sL;
@@ -182,6 +195,11 @@ export class AudioAnalysisService {
       peakR: hasRight ? safeLog10(peakR) : safeLog10(peakL),
       dcOffsetL: sumL / length,
       dcOffsetR: hasRight ? sumR / length : sumL / length,
+      absSumL,
+      absSumR: hasRight ? absSumR : absSumL,
+      sumLR,
+      sumSqL,
+      sumSqR: hasRight ? sumSqR : sumSqL,
       rmsL: safeLog10(Math.sqrt(sumSqL / length)),
       rmsR: hasRight ? safeLog10(Math.sqrt(sumSqR / length)) : safeLog10(Math.sqrt(sumSqL / length)),
       rmsMid: hasRight ? safeLog10(Math.sqrt(sumSqMid / length)) : safeLog10(Math.sqrt(sumSqL / length)),
@@ -377,13 +395,21 @@ export class AudioAnalysisService {
     const spectrum = await this.fftEngine.performFFT(audioBuffer, fftSize);
 
     const sampleRate = audioBuffer.sampleRate;
-    const subBass = this.analyzeFrequencyBand(spectrum, 20, 60, sampleRate, fftSize);
-    const bass = this.analyzeFrequencyBand(spectrum, 60, 250, sampleRate, fftSize);
-    const lowMids = this.analyzeFrequencyBand(spectrum, 250, 500, sampleRate, fftSize);
-    const mids = this.analyzeFrequencyBand(spectrum, 500, 2000, sampleRate, fftSize);
-    const highMids = this.analyzeFrequencyBand(spectrum, 2000, 4000, sampleRate, fftSize);
-    const presence = this.analyzeFrequencyBand(spectrum, 4000, 6000, sampleRate, fftSize);
-    const brilliance = this.analyzeFrequencyBand(spectrum, 6000, 20000, sampleRate, fftSize);
+
+    // ⚡ Bolt: Calculate total energy once to avoid redundant O(N) passes in each band analysis
+    let totalEnergy = 0;
+    for (const band of spectrum) {
+      totalEnergy += Math.pow(10, band.magnitude / 20);
+    }
+    const safeTotalEnergy = totalEnergy + 1e-10;
+
+    const subBass = this.analyzeFrequencyBand(spectrum, 20, 60, sampleRate, fftSize, safeTotalEnergy);
+    const bass = this.analyzeFrequencyBand(spectrum, 60, 250, sampleRate, fftSize, safeTotalEnergy);
+    const lowMids = this.analyzeFrequencyBand(spectrum, 250, 500, sampleRate, fftSize, safeTotalEnergy);
+    const mids = this.analyzeFrequencyBand(spectrum, 500, 2000, sampleRate, fftSize, safeTotalEnergy);
+    const highMids = this.analyzeFrequencyBand(spectrum, 2000, 4000, sampleRate, fftSize, safeTotalEnergy);
+    const presence = this.analyzeFrequencyBand(spectrum, 4000, 6000, sampleRate, fftSize, safeTotalEnergy);
+    const brilliance = this.analyzeFrequencyBand(spectrum, 6000, 20000, sampleRate, fftSize, safeTotalEnergy);
 
     const spectralCentroid = this.calculateSpectralCentroid(spectrum, sampleRate, fftSize);
     const spectralRolloff = this.calculateSpectralRolloff(spectrum, sampleRate, fftSize);
@@ -417,7 +443,8 @@ export class AudioAnalysisService {
     minFreq: number,
     maxFreq: number,
     sampleRate: number,
-    fftSize: number
+    fftSize: number,
+    totalEnergy: number
   ): FrequencyBandDetail {
     const minBin = Math.floor((minFreq * fftSize) / sampleRate);
     const maxBin = Math.floor((maxFreq * fftSize) / sampleRate);
@@ -438,11 +465,7 @@ export class AudioAnalysisService {
     const avgMagnitude = count > 0 ? sumMagnitude / count : -100;
     const rmsEnergy = count > 0 ? 20 * Math.log10(sumEnergy / count + 1e-10) : -100;
 
-    let totalEnergy = 0;
-    for (const band of spectrum) {
-      totalEnergy += Math.pow(10, band.magnitude / 20);
-    }
-    const percentage = (sumEnergy / (totalEnergy + 1e-10)) * 100;
+    const percentage = (sumEnergy / totalEnergy) * 100;
 
     return {
       range: [minFreq, maxFreq],
@@ -700,16 +723,14 @@ export class AudioAnalysisService {
    */
   private async analyzeMusicalFeatures(
     audioBuffer: AudioBuffer,
-    mono: Float32Array
+    stats: BasicAudioStats
   ): Promise<MusicalAnalysis> {
-    const keyData = this.detectKey(mono, audioBuffer.sampleRate);
-    const pitchClasses = this.analyzePitchClasses(mono, audioBuffer.sampleRate);
+    const keyData = this.detectKey(stats.mono, audioBuffer.sampleRate);
+    const pitchClasses = this.analyzePitchClasses(stats.mono, audioBuffer.sampleRate);
 
-    let energy = 0;
-    for (const sample of mono) {
-      energy += sample * sample;
-    }
-    energy = Math.min(Math.sqrt(energy / mono.length) * 5, 1);
+    // ⚡ Bolt: Derived from pre-calculated stats to avoid O(N) traversal
+    const rms = Math.pow(10, stats.rmsMid / 20);
+    const energy = Math.min(rms * 5, 1);
 
     return {
       key: keyData.key,
@@ -793,8 +814,12 @@ export class AudioAnalysisService {
     const left = channelData[0];
     const right = channelData[1];
 
-    const phaseCorrelation = this.calculatePhaseCorrelation(left, right);
-    const panBalance = this.calculatePanBalance(left, right);
+    // ⚡ Bolt: Calculate phase correlation and pan balance in O(1) from pre-collected stats
+    const denominator = Math.sqrt(stats.sumSqL * stats.sumSqR);
+    const phaseCorrelation = denominator > 0 ? stats.sumLR / denominator : 1;
+
+    const totalAbs = stats.absSumL + stats.absSumR;
+    const panBalance = totalAbs > 0 ? ((stats.absSumR - stats.absSumL) / (totalAbs + 1e-10)) * 100 : 0;
 
     // Mid/Side analysis (⚡ Bolt: pre-calculated stats)
     const rmsMid = Math.pow(10, stats.rmsMid / 20);
@@ -816,39 +841,6 @@ export class AudioAnalysisService {
     };
   }
 
-  /**
-   * Calculate phase correlation.
-   */
-  private calculatePhaseCorrelation(left: Float32Array, right: Float32Array): number {
-    let sumLR = 0;
-    let sumLL = 0;
-    let sumRR = 0;
-
-    for (let i = 0; i < left.length; i++) {
-      sumLR += left[i] * right[i];
-      sumLL += left[i] * left[i];
-      sumRR += right[i] * right[i];
-    }
-
-    const denominator = Math.sqrt(sumLL * sumRR);
-    return denominator > 0 ? sumLR / denominator : 1;
-  }
-
-  /**
-   * Calculate pan balance.
-   */
-  private calculatePanBalance(left: Float32Array, right: Float32Array): number {
-    let sumL = 0;
-    let sumR = 0;
-
-    for (let i = 0; i < left.length; i++) {
-      sumL += Math.abs(left[i]);
-      sumR += Math.abs(right[i]);
-    }
-
-    const total = sumL + sumR;
-    return total > 0 ? ((sumR - sumL) / (total + 1e-10)) * 100 : 0;
-  }
 
   /**
    * Analyze stereo field per frequency.
