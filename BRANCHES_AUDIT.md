@@ -31,6 +31,7 @@ These branches are unrelated projects that clutter the main Song Generator Pro c
 - `codex/create-gemini-sidebar-extension-replica` (Browser extension)
 - `codex/create-gpt-studio-with-testing-tools` (Development tool)
 - `codex/simulated-experiences-demographic-impact-review` (Review/Analysis tool)
+- `feat/gemini-chrome-assistant-9328924754254525612` (Browser extension)
 
 ## ⚡ Bolt Optimization Target
-The **Song Generator Pro Hub** currently suffers from slow audio analysis. The `AudioAnalysisService` is using a naive DFT which is $O(N^2)$. I will be implementing the $O(N \log N)$ FFT optimization in the hub branches.
+The **Song Generator Pro Hub** has been upgraded to $O(N \log N)$ FFT, but still performs redundant trigonometric calculations ($Math.cos/sin$) in every recursive step. I will be implementing **Trigonometric Caching** to eliminate thousands of expensive math calls per analysis.
