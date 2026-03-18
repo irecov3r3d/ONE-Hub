@@ -80,6 +80,9 @@ export class AudioAnalysisService {
     // ⚡ Bolt: Single-pass stats collection
     const stats = this.analyzeBasicStats(channelData);
 
+    // ⚡ Bolt: Consolidate 8192-point FFT (used by Frequency and Harmonic analysis)
+    const spectrum8192 = await this.fftEngine.performFFT(audioBuffer, 8192);
+
     const [
       temporal,
       frequency,
@@ -91,11 +94,11 @@ export class AudioAnalysisService {
       quality,
     ] = await Promise.all([
       this.analyzeTemporalFeatures(audioBuffer, stats.mono),
-      this.analyzeFrequency(audioBuffer, stats.mono),
+      this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192),
       this.analyzeLoudness(audioBuffer, stats),
       this.analyzeMusicalFeatures(audioBuffer, stats),
       this.analyzeStereo(audioBuffer, channelData, stats),
-      this.analyzeHarmonics(audioBuffer, channelData),
+      this.analyzeHarmonics(audioBuffer, channelData, spectrum8192),
       this.generateSpectralData(audioBuffer, channelData),
       this.analyzeQuality(audioBuffer, stats),
     ]);
@@ -247,9 +250,13 @@ export class AudioAnalysisService {
     audioBuffer: AudioBuffer,
     mono: Float32Array
   ): Promise<TemporalAnalysis> {
-    const bpmData = this.detectBPM(mono, audioBuffer.sampleRate);
+    // ⚡ Bolt: Consolidate energy envelope calculation
+    const hopSize = 512;
+    const envelope = this.calculateEnergyEnvelope(mono, hopSize);
+
+    const bpmData = this.detectBPM(envelope, audioBuffer.sampleRate, hopSize);
     const beats = this.detectBeats(mono, audioBuffer.sampleRate, bpmData.bpm);
-    const onsets = this.detectOnsets(mono, audioBuffer.sampleRate);
+    const onsets = this.detectOnsets(envelope, audioBuffer.sampleRate, hopSize);
     const sections = this.detectSections(audioBuffer, mono);
 
     return {
@@ -270,10 +277,11 @@ export class AudioAnalysisService {
   /**
    * BPM detection using autocorrelation.
    */
-  private detectBPM(samples: Float32Array, sampleRate: number): { bpm: number; confidence: number } {
-    const hopSize = 512;
-    const envelope = this.calculateEnergyEnvelope(samples, hopSize);
-
+  private detectBPM(
+    envelope: Float32Array,
+    sampleRate: number,
+    hopSize: number
+  ): { bpm: number; confidence: number } {
     const minBPM = 60;
     const maxBPM = 180;
     const minLag = Math.floor((60 / maxBPM) * sampleRate / hopSize);
@@ -337,9 +345,11 @@ export class AudioAnalysisService {
   /**
    * Detect onsets (note attacks).
    */
-  private detectOnsets(samples: Float32Array, sampleRate: number): number[] {
-    const hopSize = 512;
-    const envelope = this.calculateEnergyEnvelope(samples, hopSize);
+  private detectOnsets(
+    envelope: Float32Array,
+    sampleRate: number,
+    hopSize: number
+  ): number[] {
     const onsets: number[] = [];
 
     const threshold = 0.3;
@@ -389,11 +399,10 @@ export class AudioAnalysisService {
    */
   private async analyzeFrequency(
     audioBuffer: AudioBuffer,
-    mono: Float32Array
+    mono: Float32Array,
+    spectrum: FrequencyBand[]
   ): Promise<FrequencyAnalysis> {
     const fftSize = 8192;
-    const spectrum = await this.fftEngine.performFFT(audioBuffer, fftSize);
-
     const sampleRate = audioBuffer.sampleRate;
 
     // ⚡ Bolt: Calculate total energy once to avoid redundant O(N) passes in each band analysis
@@ -871,11 +880,10 @@ export class AudioAnalysisService {
    */
   private async analyzeHarmonics(
     audioBuffer: AudioBuffer,
-    channelData: Float32Array[]
+    channelData: Float32Array[],
+    spectrum: FrequencyBand[]
   ): Promise<HarmonicAnalysis> {
     const fftSize = 8192;
-    const spectrum = await this.fftEngine.performFFT(audioBuffer, fftSize);
-
     const fundamentalFreq = this.findFundamentalFrequency(spectrum, audioBuffer.sampleRate, fftSize);
     const harmonics = this.extractHarmonics(spectrum, fundamentalFreq, audioBuffer.sampleRate, fftSize);
     const harmonicToNoiseRatio = this.calculateHNR(spectrum, harmonics);

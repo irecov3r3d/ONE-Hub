@@ -6,6 +6,7 @@ import type { FrequencyBand } from '@/types';
 export class FastFFTEngine {
   private audioContext: AudioContext;
   private static hannWindowCache: Map<number, Float32Array> = new Map();
+  private static twiddleCache: Map<number, Float32Array> = new Map();
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
@@ -92,6 +93,24 @@ export class FastFFTEngine {
   }
 
   /**
+   * Get pre-calculated twiddle factors (cos/sin) for FFT size n.
+   * Interleaved as [cos(0), sin(0), cos(angle), sin(angle), ...]
+   */
+  private static getTwiddleFactors(n: number): Float32Array {
+    let factors = FastFFTEngine.twiddleCache.get(n);
+    if (!factors) {
+      factors = new Float32Array(n); // n/2 * 2 (real, imag)
+      for (let k = 0; k < n / 2; k++) {
+        const angle = -2 * Math.PI * k / n;
+        factors[k * 2] = Math.cos(angle);
+        factors[k * 2 + 1] = Math.sin(angle);
+      }
+      FastFFTEngine.twiddleCache.set(n, factors);
+    }
+    return factors;
+  }
+
+  /**
    * Cooley-Tukey FFT algorithm (O(n log n) instead of O(n²))
    */
   public static cooleyTukeyFFT(samples: Float32Array): Float32Array {
@@ -119,11 +138,13 @@ export class FastFFTEngine {
 
     // Combine results
     const result = new Float32Array(n * 2);
+    const factors = FastFFTEngine.getTwiddleFactors(n);
 
     for (let k = 0; k < n / 2; k++) {
-      const angle = -2 * Math.PI * k / n;
-      const tReal = Math.cos(angle) * fftOdd[k * 2] - Math.sin(angle) * fftOdd[k * 2 + 1];
-      const tImag = Math.sin(angle) * fftOdd[k * 2] + Math.cos(angle) * fftOdd[k * 2 + 1];
+      const cos = factors[k * 2];
+      const sin = factors[k * 2 + 1];
+      const tReal = cos * fftOdd[k * 2] - sin * fftOdd[k * 2 + 1];
+      const tImag = sin * fftOdd[k * 2] + cos * fftOdd[k * 2 + 1];
 
       // k
       result[k * 2] = fftEven[k * 2] + tReal;
