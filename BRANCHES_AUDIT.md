@@ -37,6 +37,7 @@ These branches are unrelated projects or standalone prototypes that clutter the 
 - `feat/gemini-chrome-assistant-*` (Browser extension)
 
 ## ⚡ Bolt Optimization Target
-The **Song Generator Pro Hub** currently suffers from slow audio analysis. I am implementing the following optimizations:
-1. **FFT Twiddle Factor Caching**: Eliminating redundant `Math.cos` and `Math.sin` calls in `FastFFTEngine`.
-2. **Redundant Operation Consolidation**: Consolidating multiple 8192-point FFT passes and energy envelope calculations in `AudioAnalysisService`.
+The **Song Generator Pro Hub** currently suffers from redundant memory allocations and multiple buffer traversals during audio mastering and analysis. I am implementing the following optimizations:
+
+1.  **Single-Pass Audio Normalization**: Refactoring `AudioMasteringService.normalizeToLUFS` to calculate RMS energy directly from input channels and apply gain in-place, eliminating $O(N)$ allocations and a redundant mono conversion pass.
+2.  **Consolidated Level Analysis**: Refactoring `AudioAnalyzer.calculateLevels` to perform Peak and RMS detection in a single $O(N)$ loop, reducing buffer traversals and CPU overhead.
