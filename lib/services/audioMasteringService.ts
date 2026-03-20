@@ -554,35 +554,46 @@ export class AudioMasteringService {
 
   /**
    * Normalize to target LUFS
+   * ⚡ Bolt: Single-pass RMS calculation and in-place gain application.
+   * Eliminates O(N) intermediate mono buffer and O(N*C) output buffer allocations.
    */
   private normalizeToLUFS(
     channels: Float32Array[],
     targetLUFS: number,
-    sampleRate: number
+    _sampleRate: number
   ): Float32Array[] {
-    // Calculate current LUFS (simplified)
-    const mono = this.convertToMono(channels);
+    const length = channels[0].length;
+    const numChannels = channels.length;
     let sumSquares = 0;
 
-    for (const sample of mono) {
-      sumSquares += sample * sample;
+    // Calculate current LUFS (simplified) in a single pass over channels
+    for (let i = 0; i < length; i++) {
+      let sum = 0;
+      for (let ch = 0; ch < numChannels; ch++) {
+        sum += channels[ch][i];
+      }
+      const monoSample = sum / numChannels;
+      sumSquares += monoSample * monoSample;
     }
 
-    const rms = Math.sqrt(sumSquares / mono.length);
-    const currentLUFS = -0.691 + 10 * Math.log10(rms * rms);
+    const rms = Math.sqrt(sumSquares / length);
+    const currentLUFS = -0.691 + 10 * Math.log10(rms * rms + 1e-10);
 
     // Calculate gain adjustment
     const gainAdjustmentDB = targetLUFS - currentLUFS;
     const gainMultiplier = Math.pow(10, gainAdjustmentDB / 20);
 
-    // Apply gain to all channels
-    return channels.map(channel => {
-      const output = new Float32Array(channel.length);
-      for (let i = 0; i < channel.length; i++) {
-        output[i] = Math.max(-1, Math.min(1, channel[i] * gainMultiplier));
+    // Apply gain to all channels in-place
+    for (let ch = 0; ch < numChannels; ch++) {
+      const channel = channels[ch];
+      for (let i = 0; i < length; i++) {
+        // Apply gain with hard clipping protection
+        const sample = channel[i] * gainMultiplier;
+        channel[i] = sample > 1 ? 1 : sample < -1 ? -1 : sample;
       }
-      return output;
-    });
+    }
+
+    return channels;
   }
 
   /**
@@ -623,22 +634,6 @@ export class AudioMasteringService {
     });
   }
 
-  /**
-   * Convert multi-channel to mono
-   */
-  private convertToMono(channels: Float32Array[]): Float32Array {
-    if (channels.length === 1) return channels[0];
-
-    const mono = new Float32Array(channels[0].length);
-    for (let i = 0; i < mono.length; i++) {
-      let sum = 0;
-      for (const channel of channels) {
-        sum += channel[i];
-      }
-      mono[i] = sum / channels.length;
-    }
-    return mono;
-  }
 
   /**
    * Convert AudioBuffer to WAV blob
