@@ -1,0 +1,39 @@
+# ⚡ Hub Structure: Song Generator Pro
+
+This document defines the core branches belonging to the **Song Generator Pro Hub** and identifies unrelated branches that should be relocated to their own repositories.
+
+## 🎵 Song Generator Pro Hub (Keep)
+These branches are core features, improvements, or related services for the Song Generator platform.
+
+- `main` / `claude/song-generator-T7GUx` (Core application and UI)
+- `claude/audio-analysis-mastering-tool-ySQzQ` (Audio Analysis & Mastering)
+- `claude/auto-split-video-clips-gwIQz` (Video Visualizer features)
+- `claude/beat-maker-app-Fhpg2` (Beat creation integration)
+- `claude/music-vault-app-DNlEb` (Song library/vault)
+- `codex/add-mvp-features-for-voice-recorder` (Voice recording feature)
+- `codex/create-advanced-voice-recorder-app` (Advanced voice recording)
+- `codex/start-ios-build-for-voice-control-studio` (Mobile integration)
+- `bolt/*` (Performance optimizations)
+- `feature-save-to-library-*` (User library features)
+- `usability-improvements-*` (UX enhancements)
+- `security-fix-*` (Security maintenance)
+- `claude/add-error-handling-*` (General maintenance)
+- `claude/initial-setup-*` (Infrastructure)
+- `codex/organize-file-folders-neatly` (Maintenance)
+- `audio-analyzer-rms-optimization-*` (Performance maintenance)
+- `improve-analyzer-accuracy-*` (Quality maintenance)
+
+## 📦 Relocate (Move to own Repo)
+These branches are unrelated projects or standalone prototypes that clutter the main Song Generator Pro codebase.
+
+- `remotes/origin/LemmeGitDat--Modular-build-for-local-areas-to-track-through-community-whats-popping-near-them` (Community/Social app)
+- `claude/chrome-extension-replica-*` (Browser extension)
+- `claude/firefox-teach-repeat-extension-*` (Browser extension)
+- `claude/keyboard-window-splitter-fCMem` (System utility)
+- `claude/multi-tab-ai-automation-X7gEG` (AI Automation tool)
+- `codex/build-linux-mint-desktop-environment*` (OS customization)
+- `codex/build-mvp-for-foodmarket-app` (E-commerce/Food app)
+- `codex/create-gemini-sidebar-extension-replica*` (Browser extension)
+- `codex/create-gpt-studio-with-testing-tools` (Development tool)
+- `codex/simulated-experiences-demographic-impact-review` (Review/Analysis tool)
+- `feat/gemini-chrome-assistant-*` (Browser extension)

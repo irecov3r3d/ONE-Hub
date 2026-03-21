@@ -391,18 +391,55 @@ export class AudioMasteringService {
     const ceiling = Math.pow(10, settings.ceiling / 20);
     const releaseSamples = (settings.release / 1000) * sampleRate;
     const lookaheadSamples = Math.floor((settings.lookahead / 1000) * sampleRate);
+    const length = channels[0].length;
+    const numChannels = channels.length;
+
+    // ⚡ Bolt Optimization: O(N) Sliding Window Maximum
+    // Pre-calculate absolute peaks across channels
+    const absolutePeaks = new Float32Array(length);
+    for (let i = 0; i < length; i++) {
+      let maxAbs = 0;
+      for (let ch = 0; ch < numChannels; ch++) {
+        const abs = Math.abs(channels[ch][i]);
+        if (abs > maxAbs) maxAbs = abs;
+      }
+      absolutePeaks[i] = maxAbs;
+    }
+
+    // Calculate lookahead peaks using a sliding window maximum (deque-based)
+    // This replaces the previous O(N * L) nested loop with true O(N).
+    const peakLookahead = new Float32Array(length);
+    const deque: number[] = [];
+    let head = 0;
+
+    // We want the maximum in the range [i, min(i + lookaheadSamples, length - 1)]
+    // To do this in O(N), we iterate through all samples once.
+    for (let j = 0; j < length + lookaheadSamples; j++) {
+      // 1. Add new sample j to the deque
+      if (j < length) {
+        const val = absolutePeaks[j];
+        while (deque.length > head && absolutePeaks[deque[deque.length - 1]] <= val) {
+          deque.pop();
+        }
+        deque.push(j);
+      }
+
+      // 2. The sample we are currently calculating the lookahead peak for is i
+      const i = j - lookaheadSamples;
+      if (i >= 0) {
+        // Remove indices from front that are no longer in the lookahead window [i, i + lookaheadSamples]
+        if (deque[head] < i) {
+          head++;
+        }
+        peakLookahead[i] = absolutePeaks[deque[head]];
+      }
+    }
 
     const processedChannels = channels.map(ch => new Float32Array(ch.length));
     let envelope = 0;
 
-    for (let i = 0; i < channels[0].length; i++) {
-      // Lookahead: check future samples
-      let peakAhead = 0;
-      for (let la = 0; la < lookaheadSamples && i + la < channels[0].length; la++) {
-        for (const channel of channels) {
-          peakAhead = Math.max(peakAhead, Math.abs(channel[i + la]));
-        }
-      }
+    for (let i = 0; i < length; i++) {
+      const peakAhead = peakLookahead[i];
 
       // Envelope follower
       if (peakAhead > envelope) {
@@ -418,11 +455,11 @@ export class AudioMasteringService {
       }
 
       // Apply limiting to all channels
-      for (let ch = 0; ch < channels.length; ch++) {
+      for (let ch = 0; ch < numChannels; ch++) {
         let sample = channels[ch][i] * gainReduction;
 
         // Hard clip at ceiling
-        sample = Math.max(-ceiling, Math.min(ceiling, sample));
+        sample = sample > ceiling ? ceiling : (sample < -ceiling ? -ceiling : sample);
 
         processedChannels[ch][i] = sample;
       }

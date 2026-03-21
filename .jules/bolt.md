@@ -24,3 +24,7 @@
 ## 2025-05-15 - [FFT Trigonometric Caching]
 **Learning:** Recomputing Hann window coefficients using `Math.cos` across thousands of FFT frames is a significant CPU bottleneck. Since FFT window sizes are deterministic (powers of 2), a static `Map` cache provides a measurable speedup with minimal memory overhead.
 **Action:** Implement static caches for window coefficients and trigonometric twiddle factors in DSP engines.
+
+## 2025-05-15 - [Sliding Window Limiter Optimization]
+**Learning:** Audio limiters with lookahead often use a naive nested loop ($O(N \cdot L)$) to find peaks in future samples. For standard sample rates and lookahead windows, this creates a massive processing bottleneck that scales poorly with track length.
+**Action:** Implement an $O(N)$ sliding window maximum algorithm using a monotonic deque (with a head pointer for true $O(1)$ amortized performance in JS) to handle lookahead peak detection.
