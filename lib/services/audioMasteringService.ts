@@ -143,62 +143,52 @@ export class AudioMasteringService {
 
   /**
    * Apply EQ to audio
+   * ⚡ Bolt Optimization: Processes EQ bands in-place on existing channel buffers.
+   * Eliminates O(N * B * C) memory allocations where B is number of bands and C is channels.
    */
   private applyEQ(
     channels: Float32Array[],
     eqBands: EQBand[],
     sampleRate: number
   ): Float32Array[] {
-    const processedChannels = channels.map(channel => {
-      const copy = new Float32Array(channel.length);
-      copy.set(channel);
-      return copy;
-    });
-
     for (const band of eqBands) {
       if (!band.enabled) continue;
 
-      // Apply biquad filter for each EQ band
-      for (let ch = 0; ch < processedChannels.length; ch++) {
-        processedChannels[ch] = this.applyBiquadFilter(
-          processedChannels[ch],
-          band,
-          sampleRate
-        );
+      // Apply biquad filter for each EQ band in-place
+      for (let ch = 0; ch < channels.length; ch++) {
+        this.applyBiquadFilter(channels[ch], band, sampleRate);
       }
     }
 
-    return processedChannels;
+    return channels;
   }
 
   /**
    * Apply biquad filter (EQ)
+   * ⚡ Bolt Optimization: Operates in-place on the provided buffer.
    */
   private applyBiquadFilter(
-    input: Float32Array<ArrayBufferLike>,
+    buffer: Float32Array,
     band: EQBand,
     sampleRate: number
-  ): Float32Array<ArrayBuffer> {
-    const output = new Float32Array(input.length);
+  ): void {
     const coeffs = this.calculateBiquadCoefficients(band, sampleRate);
 
     // Apply filter (Direct Form I)
     let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
 
-    for (let i = 0; i < input.length; i++) {
-      const x0 = input[i];
+    for (let i = 0; i < buffer.length; i++) {
+      const x0 = buffer[i];
       const y0 = coeffs.b0 * x0 + coeffs.b1 * x1 + coeffs.b2 * x2
         - coeffs.a1 * y1 - coeffs.a2 * y2;
 
-      output[i] = y0;
+      buffer[i] = y0;
 
       x2 = x1;
       x1 = x0;
       y2 = y1;
       y1 = y0;
     }
-
-    return output;
   }
 
   /**

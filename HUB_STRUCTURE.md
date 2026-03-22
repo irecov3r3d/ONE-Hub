@@ -22,6 +22,11 @@ These branches are core features, improvements, or related services for the Song
 - `codex/organize-file-folders-neatly` (Maintenance)
 - `audio-analyzer-rms-optimization-*` (Performance maintenance)
 - `improve-analyzer-accuracy-*` (Quality maintenance)
+- `add-mastering-presets-tests-*` (Testing maintenance)
+- `cleanup-mastering-logs-*` (Maintenance)
+- `fix-startup-and-upgrades-*` (Maintenance)
+- `improve-music-quality-*` (Quality maintenance)
+- `monorepo-extraction-script-fix-*` (Infrastructure maintenance)
 
 ## 📦 Relocate (Move to own Repo)
 These branches are unrelated projects or standalone prototypes that clutter the main Song Generator Pro codebase.
