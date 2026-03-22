@@ -28,3 +28,7 @@
 ## 2025-05-15 - [Sliding Window Limiter Optimization]
 **Learning:** Audio limiters with lookahead often use a naive nested loop ($O(N \cdot L)$) to find peaks in future samples. For standard sample rates and lookahead windows, this creates a massive processing bottleneck that scales poorly with track length.
 **Action:** Implement an $O(N)$ sliding window maximum algorithm using a monotonic deque (with a head pointer for true $O(1)$ amortized performance in JS) to handle lookahead peak detection.
+
+## 2025-05-15 - [In-place EQ Processing]
+**Learning:** Naive implementations of mastering chains often allocate fresh buffers for every processing stage (EQ, Compression, etc.). For EQ particularly, if each band creates a new buffer, a 10-band EQ on a 5-minute track can allocate gigabytes of transient memory, causing massive GC pressure.
+**Action:** Refactor signal processing methods to operate in-place on existing channel buffers whenever possible. Ensure the Direct Form I biquad implementation captures the current input sample before modification to maintain recurrence relation integrity.
