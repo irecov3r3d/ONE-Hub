@@ -84,6 +84,9 @@ export class AudioAnalysisService {
     // ⚡ Bolt: Consolidate 8192-point FFT (used by Frequency and Harmonic analysis)
     const spectrum8192 = await this.fftEngine.performFFT(audioBuffer, 8192);
 
+    // ⚡ Bolt: Pre-calculate basic stats to avoid redundant passes
+    const stats = this.analyzeBasicStats(channelData);
+
     const [
       temporal,
       frequency,
@@ -371,6 +374,7 @@ export class AudioAnalysisService {
     const duration = audioBuffer.duration;
     const sectionLength = 8;
     const sections: AudioSection[] = [];
+    const mono = stats.mono;
 
     for (let time = 0; time < duration; time += sectionLength) {
       const endTime = Math.min(time + sectionLength, duration);
@@ -821,8 +825,9 @@ export class AudioAnalysisService {
       };
     }
 
-    const left = channelData[0];
-    const right = channelData[1];
+    // Calculate phase correlation using pre-computed sums
+    const denominator = Math.sqrt(stats.sumLL * stats.sumRR);
+    const phaseCorrelation = denominator > 0 ? stats.sumLR / denominator : 1;
 
     // ⚡ Bolt: Calculate phase correlation and pan balance in O(1) from pre-collected stats
     const denominator = Math.sqrt(stats.sumSqL * stats.sumSqR);
@@ -856,8 +861,7 @@ export class AudioAnalysisService {
    * Analyze stereo field per frequency.
    */
   private analyzeStereoField(
-    left: Float32Array,
-    right: Float32Array,
+    mono: Float32Array,
     sampleRate: number
   ): StereoField[] {
     const bands = [
@@ -1006,7 +1010,7 @@ export class AudioAnalysisService {
    */
   private async generateSpectralData(
     audioBuffer: AudioBuffer,
-    channelData: Float32Array[]
+    stats: BasicAudioStats
   ): Promise<SpectralData> {
     const fftSize = 2048;
     const hopSize = fftSize / 4;
