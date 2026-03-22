@@ -79,10 +79,9 @@ export class AudioAnalyzer {
    * Calculate spectral clarity (high frequency content quality)
    */
   private static async calculateSpectralClarity(audioBuffer: AudioBuffer): Promise<number> {
-    const channelData = audioBuffer.getChannelData(0);
     const sampleRate = audioBuffer.sampleRate;
 
-    // Perform FFT analysis
+    // Perform FFT analysis on a segment from the middle of the track
     const fftSize = 2048;
     const frequencyBins = this.performFFT(channelData, fftSize, sampleRate);
 
@@ -94,15 +93,16 @@ export class AudioAnalyzer {
     let totalEnergy = 0;
 
     for (let i = 0; i < frequencyBins.length; i++) {
-      totalEnergy += frequencyBins[i];
+      const energy = frequencyBins[i] * frequencyBins[i];
+      totalEnergy += energy;
       if (i >= hfStart && i < hfEnd) {
-        hfEnergy += frequencyBins[i];
+        hfEnergy += energy;
       }
     }
 
     // Spectral clarity: ratio of high frequency energy
     // Good mixes have 15-25% HF energy
-    const hfRatio = hfEnergy / totalEnergy;
+    const hfRatio = totalEnergy > 0 ? hfEnergy / totalEnergy : 0;
     const clarity = Math.min(1, hfRatio / 0.25);
 
     return clarity;
@@ -112,7 +112,7 @@ export class AudioAnalyzer {
    * Calculate dynamic range (difference between loudest and softest parts)
    */
   private static calculateDynamicRange(audioBuffer: AudioBuffer): number {
-    const channelData = audioBuffer.getChannelData(0);
+    const channelData = this.getMonoData(audioBuffer);
 
     // Split into windows and calculate RMS for each
     const windowSize = audioBuffer.sampleRate; // 1 second windows
@@ -176,7 +176,6 @@ export class AudioAnalyzer {
    * Calculate frequency balance (how balanced the spectrum is)
    */
   private static calculateFrequencyBalance(audioBuffer: AudioBuffer): number {
-    const channelData = audioBuffer.getChannelData(0);
     const sampleRate = audioBuffer.sampleRate;
     const fftSize = 2048;
 
@@ -191,12 +190,13 @@ export class AudioAnalyzer {
     let highEnergy = 0;
 
     for (let i = 0; i < frequencyBins.length; i++) {
+      const energy = frequencyBins[i] * frequencyBins[i];
       if (i < bassEnd) {
-        bassEnergy += frequencyBins[i];
+        bassEnergy += energy;
       } else if (i < midEnd) {
-        midEnergy += frequencyBins[i];
+        midEnergy += energy;
       } else {
-        highEnergy += frequencyBins[i];
+        highEnergy += energy;
       }
     }
 
@@ -250,7 +250,7 @@ export class AudioAnalyzer {
     const peakDb = 20 * Math.log10(peak + 1e-10);
 
     return {
-      rms: rmsDb,
+      rms: lufs,
       peak: peakDb,
     };
   }
@@ -259,7 +259,7 @@ export class AudioAnalyzer {
    * Calculate coherence (how consistent the audio quality is)
    */
   private static calculateCoherence(audioBuffer: AudioBuffer): number {
-    const channelData = audioBuffer.getChannelData(0);
+    const channelData = this.getMonoData(audioBuffer);
     const windowSize = audioBuffer.sampleRate; // 1 second windows
 
     const rmsValues: number[] = [];
