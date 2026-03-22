@@ -223,23 +223,31 @@ export class AudioAnalyzer {
 
   /**
    * Calculate RMS and peak levels
+   * ⚡ Bolt: Consolidated Peak and RMS detection into a single O(N) loop.
    */
   private static calculateLevels(audioBuffer: AudioBuffer): { rms: number; peak: number } {
     const channelData = audioBuffer.getChannelData(0);
+    const length = channelData.length;
 
-    const rms = this.calculateRMS(channelData);
-
-    // ⚡ Bolt Optimization: Use high-performance loop instead of spread operator
-    // This avoids "Maximum call stack size exceeded" and reduces memory allocations
+    let sumSquares = 0;
     let peak = 0;
-    for (let i = 0; i < channelData.length; i++) {
-      const abs = Math.abs(channelData[i]);
+
+    for (let i = 0; i < length; i++) {
+      const sample = channelData[i];
+      const abs = sample < 0 ? -sample : sample;
+
+      // Peak detection
       if (abs > peak) peak = abs;
+
+      // RMS accumulation
+      sumSquares += sample * sample;
     }
 
+    const rms = Math.sqrt(sumSquares / length);
+
     // Convert to dB
-    const rmsDb = 20 * Math.log10(rms);
-    const peakDb = 20 * Math.log10(peak);
+    const rmsDb = 20 * Math.log10(rms + 1e-10);
+    const peakDb = 20 * Math.log10(peak + 1e-10);
 
     return {
       rms: rmsDb,
