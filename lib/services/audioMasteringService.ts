@@ -143,62 +143,52 @@ export class AudioMasteringService {
 
   /**
    * Apply EQ to audio
+   * ⚡ Bolt Optimization: Processes EQ bands in-place on existing channel buffers.
+   * Eliminates O(N * B * C) memory allocations where B is number of bands and C is channels.
    */
   private applyEQ(
     channels: Float32Array[],
     eqBands: EQBand[],
     sampleRate: number
   ): Float32Array[] {
-    const processedChannels = channels.map(channel => {
-      const copy = new Float32Array(channel.length);
-      copy.set(channel);
-      return copy;
-    });
-
     for (const band of eqBands) {
       if (!band.enabled) continue;
 
-      // Apply biquad filter for each EQ band
-      for (let ch = 0; ch < processedChannels.length; ch++) {
-        processedChannels[ch] = this.applyBiquadFilter(
-          processedChannels[ch],
-          band,
-          sampleRate
-        );
+      // Apply biquad filter for each EQ band in-place
+      for (let ch = 0; ch < channels.length; ch++) {
+        this.applyBiquadFilter(channels[ch], band, sampleRate);
       }
     }
 
-    return processedChannels;
+    return channels;
   }
 
   /**
    * Apply biquad filter (EQ)
+   * ⚡ Bolt Optimization: Operates in-place on the provided buffer.
    */
   private applyBiquadFilter(
-    input: Float32Array<ArrayBufferLike>,
+    buffer: Float32Array,
     band: EQBand,
     sampleRate: number
-  ): Float32Array<ArrayBuffer> {
-    const output = new Float32Array(input.length);
+  ): void {
     const coeffs = this.calculateBiquadCoefficients(band, sampleRate);
 
     // Apply filter (Direct Form I)
     let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
 
-    for (let i = 0; i < input.length; i++) {
-      const x0 = input[i];
+    for (let i = 0; i < buffer.length; i++) {
+      const x0 = buffer[i];
       const y0 = coeffs.b0 * x0 + coeffs.b1 * x1 + coeffs.b2 * x2
         - coeffs.a1 * y1 - coeffs.a2 * y2;
 
-      output[i] = y0;
+      buffer[i] = y0;
 
       x2 = x1;
       x1 = x0;
       y2 = y1;
       y1 = y0;
     }
-
-    return output;
   }
 
   /**
@@ -391,18 +381,55 @@ export class AudioMasteringService {
     const ceiling = Math.pow(10, settings.ceiling / 20);
     const releaseSamples = (settings.release / 1000) * sampleRate;
     const lookaheadSamples = Math.floor((settings.lookahead / 1000) * sampleRate);
+    const length = channels[0].length;
+    const numChannels = channels.length;
+
+    // ⚡ Bolt Optimization: O(N) Sliding Window Maximum
+    // Pre-calculate absolute peaks across channels
+    const absolutePeaks = new Float32Array(length);
+    for (let i = 0; i < length; i++) {
+      let maxAbs = 0;
+      for (let ch = 0; ch < numChannels; ch++) {
+        const abs = Math.abs(channels[ch][i]);
+        if (abs > maxAbs) maxAbs = abs;
+      }
+      absolutePeaks[i] = maxAbs;
+    }
+
+    // Calculate lookahead peaks using a sliding window maximum (deque-based)
+    // This replaces the previous O(N * L) nested loop with true O(N).
+    const peakLookahead = new Float32Array(length);
+    const deque: number[] = [];
+    let head = 0;
+
+    // We want the maximum in the range [i, min(i + lookaheadSamples, length - 1)]
+    // To do this in O(N), we iterate through all samples once.
+    for (let j = 0; j < length + lookaheadSamples; j++) {
+      // 1. Add new sample j to the deque
+      if (j < length) {
+        const val = absolutePeaks[j];
+        while (deque.length > head && absolutePeaks[deque[deque.length - 1]] <= val) {
+          deque.pop();
+        }
+        deque.push(j);
+      }
+
+      // 2. The sample we are currently calculating the lookahead peak for is i
+      const i = j - lookaheadSamples;
+      if (i >= 0) {
+        // Remove indices from front that are no longer in the lookahead window [i, i + lookaheadSamples]
+        if (deque[head] < i) {
+          head++;
+        }
+        peakLookahead[i] = absolutePeaks[deque[head]];
+      }
+    }
 
     const processedChannels = channels.map(ch => new Float32Array(ch.length));
     let envelope = 0;
 
-    for (let i = 0; i < channels[0].length; i++) {
-      // Lookahead: check future samples
-      let peakAhead = 0;
-      for (let la = 0; la < lookaheadSamples && i + la < channels[0].length; la++) {
-        for (const channel of channels) {
-          peakAhead = Math.max(peakAhead, Math.abs(channel[i + la]));
-        }
-      }
+    for (let i = 0; i < length; i++) {
+      const peakAhead = peakLookahead[i];
 
       // Envelope follower
       if (peakAhead > envelope) {
@@ -418,11 +445,11 @@ export class AudioMasteringService {
       }
 
       // Apply limiting to all channels
-      for (let ch = 0; ch < channels.length; ch++) {
+      for (let ch = 0; ch < numChannels; ch++) {
         let sample = channels[ch][i] * gainReduction;
 
         // Hard clip at ceiling
-        sample = Math.max(-ceiling, Math.min(ceiling, sample));
+        sample = sample > ceiling ? ceiling : (sample < -ceiling ? -ceiling : sample);
 
         processedChannels[ch][i] = sample;
       }
@@ -554,35 +581,46 @@ export class AudioMasteringService {
 
   /**
    * Normalize to target LUFS
+   * ⚡ Bolt: Single-pass RMS calculation and in-place gain application.
+   * Eliminates O(N) intermediate mono buffer and O(N*C) output buffer allocations.
    */
   private normalizeToLUFS(
     channels: Float32Array[],
     targetLUFS: number,
-    sampleRate: number
+    _sampleRate: number
   ): Float32Array[] {
-    // Calculate current LUFS (simplified)
-    const mono = this.convertToMono(channels);
+    const length = channels[0].length;
+    const numChannels = channels.length;
     let sumSquares = 0;
 
-    for (const sample of mono) {
-      sumSquares += sample * sample;
+    // Calculate current LUFS (simplified) in a single pass over channels
+    for (let i = 0; i < length; i++) {
+      let sum = 0;
+      for (let ch = 0; ch < numChannels; ch++) {
+        sum += channels[ch][i];
+      }
+      const monoSample = sum / numChannels;
+      sumSquares += monoSample * monoSample;
     }
 
-    const rms = Math.sqrt(sumSquares / mono.length);
-    const currentLUFS = -0.691 + 10 * Math.log10(rms * rms);
+    const rms = Math.sqrt(sumSquares / length);
+    const currentLUFS = -0.691 + 10 * Math.log10(rms * rms + 1e-10);
 
     // Calculate gain adjustment
     const gainAdjustmentDB = targetLUFS - currentLUFS;
     const gainMultiplier = Math.pow(10, gainAdjustmentDB / 20);
 
-    // Apply gain to all channels
-    return channels.map(channel => {
-      const output = new Float32Array(channel.length);
-      for (let i = 0; i < channel.length; i++) {
-        output[i] = Math.max(-1, Math.min(1, channel[i] * gainMultiplier));
+    // Apply gain to all channels in-place
+    for (let ch = 0; ch < numChannels; ch++) {
+      const channel = channels[ch];
+      for (let i = 0; i < length; i++) {
+        // Apply gain with hard clipping protection
+        const sample = channel[i] * gainMultiplier;
+        channel[i] = sample > 1 ? 1 : sample < -1 ? -1 : sample;
       }
-      return output;
-    });
+    }
+
+    return channels;
   }
 
   /**
@@ -623,22 +661,6 @@ export class AudioMasteringService {
     });
   }
 
-  /**
-   * Convert multi-channel to mono
-   */
-  private convertToMono(channels: Float32Array[]): Float32Array {
-    if (channels.length === 1) return channels[0];
-
-    const mono = new Float32Array(channels[0].length);
-    for (let i = 0; i < mono.length; i++) {
-      let sum = 0;
-      for (const channel of channels) {
-        sum += channel[i];
-      }
-      mono[i] = sum / channels.length;
-    }
-    return mono;
-  }
 
   /**
    * Convert AudioBuffer to WAV blob

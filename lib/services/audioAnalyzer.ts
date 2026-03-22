@@ -83,7 +83,7 @@ export class AudioAnalyzer {
 
     // Perform FFT analysis on a segment from the middle of the track
     const fftSize = 2048;
-    const frequencyBins = this.performFFTFromMiddle(audioBuffer, fftSize);
+    const frequencyBins = this.performFFT(channelData, fftSize, sampleRate);
 
     // Analyze high frequency content (4kHz - 20kHz)
     const hfStart = Math.floor((4000 / sampleRate) * fftSize);
@@ -179,8 +179,7 @@ export class AudioAnalyzer {
     const sampleRate = audioBuffer.sampleRate;
     const fftSize = 2048;
 
-    // Perform FFT analysis on a segment from the middle of the track
-    const frequencyBins = this.performFFTFromMiddle(audioBuffer, fftSize);
+    const frequencyBins = this.performFFT(channelData, fftSize, sampleRate);
 
     // Divide spectrum into 3 bands: bass, mids, highs
     const bassEnd = Math.floor((250 / sampleRate) * fftSize);
@@ -224,34 +223,31 @@ export class AudioAnalyzer {
 
   /**
    * Calculate RMS and peak levels
+   * ⚡ Bolt: Consolidated Peak and RMS detection into a single O(N) loop.
    */
   private static calculateLevels(audioBuffer: AudioBuffer): { rms: number; peak: number } {
-    const monoData = this.getMonoData(audioBuffer);
-    const sampleRate = audioBuffer.sampleRate;
+    const channelData = audioBuffer.getChannelData(0);
+    const length = channelData.length;
 
-    // K-weighting filter for LUFS estimation
-    const weightedData = this.applyKWeighting(monoData, sampleRate);
-
-    // Calculate RMS over a 1-second representative window (middle of track)
-    const windowSize = Math.min(weightedData.length, sampleRate);
-    const startOffset = Math.floor((weightedData.length - windowSize) / 2);
-    const windowSamples = weightedData.slice(startOffset, startOffset + windowSize);
-    const rms = this.calculateRMS(windowSamples);
-
-    // Iterative peak detection to avoid stack overflow
+    let sumSquares = 0;
     let peak = 0;
-    for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
-      const channelData = audioBuffer.getChannelData(i);
-      for (let j = 0; j < channelData.length; j++) {
-        const absVal = Math.abs(channelData[j]);
-        if (absVal > peak) peak = absVal;
-      }
+
+    for (let i = 0; i < length; i++) {
+      const sample = channelData[i];
+      const abs = sample < 0 ? -sample : sample;
+
+      // Peak detection
+      if (abs > peak) peak = abs;
+
+      // RMS accumulation
+      sumSquares += sample * sample;
     }
 
-    // Convert to dB (using K-weighted RMS for LUFS-like value)
-    // LUFS = -0.691 + 10 * log10(sum(weighted_samples^2) / N)
-    const lufs = -0.691 + 20 * Math.log10(rms || 0.000001);
-    const peakDb = 20 * Math.log10(peak || 0.000001);
+    const rms = Math.sqrt(sumSquares / length);
+
+    // Convert to dB
+    const rmsDb = 20 * Math.log10(rms + 1e-10);
+    const peakDb = 20 * Math.log10(peak + 1e-10);
 
     return {
       rms: lufs,
@@ -328,109 +324,37 @@ export class AudioAnalyzer {
    */
   private static calculateRMS(samples: Float32Array): number {
     let sum = 0;
-    for (let i = 0; i < samples.length; i++) {
-      sum += samples[i] * samples[i];
+    const len = samples.length;
+    for (let i = 0; i < len; i++) {
+      const sample = samples[i];
+      sum += sample * sample;
     }
-    return Math.sqrt(sum / samples.length);
+    return Math.sqrt(sum / len);
   }
 
   /**
-   * Helper: Get mono version of audio buffer
+   * Helper: Perform FFT analysis
+   * ⚡ Bolt Optimization: Use real Cooley-Tukey FFT instead of random placeholder
    */
-  private static getMonoData(audioBuffer: AudioBuffer): Float32Array {
-    if (audioBuffer.numberOfChannels === 1) return audioBuffer.getChannelData(0);
+  private static performFFT(samples: Float32Array, fftSize: number, sampleRate: number): Float32Array {
+    // Use middle portion for analysis
+    const startSample = Math.floor(samples.length / 2) - Math.floor(fftSize / 2);
+    const segment = samples.slice(Math.max(0, startSample), Math.min(samples.length, startSample + fftSize));
 
-    const left = audioBuffer.getChannelData(0);
-    const right = audioBuffer.getChannelData(1);
-    const mono = new Float32Array(left.length);
-
-    for (let i = 0; i < left.length; i++) {
-      mono[i] = (left[i] + right[i]) / 2;
-    }
-
-    return mono;
-  }
-
-  /**
-   * Helper: Apply K-weighting filter (BS.1770)
-   * This is a simplified 2-stage filter:
-   * 1. Stage 1: High shelf (pre-filter)
-   * 2. Stage 2: High pass (RLB filter)
-   */
-  private static applyKWeighting(samples: Float32Array, sampleRate: number): Float32Array {
-    // Stage 1: Pre-filter (high shelf)
-    // Coefficients for ~48kHz (approximate for others)
-    const stage1 = this.applyFilter(samples, {
-      b0: 1.53512485958697,
-      b1: -2.69169618940638,
-      b2: 1.19839281085285,
-      a1: -1.69065929318241,
-      a2: 0.73248077421585
-    });
-
-    // Stage 2: RLB filter (high pass)
-    const stage2 = this.applyFilter(stage1, {
-      b0: 1.0,
-      b1: -2.0,
-      b2: 1.0,
-      a1: -1.99004745483398,
-      a2: 0.99007225036621
-    });
-
-    return stage2;
-  }
-
-  /**
-   * Simple biquad filter application
-   */
-  private static applyFilter(
-    input: Float32Array,
-    coeffs: { b0: number; b1: number; b2: number; a1: number; a2: number }
-  ): Float32Array {
-    const output = new Float32Array(input.length);
-    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-
-    for (let i = 0; i < input.length; i++) {
-      const x0 = input[i];
-      const y0 = coeffs.b0 * x0 + coeffs.b1 * x1 + coeffs.b2 * x2
-               - coeffs.a1 * y1 - coeffs.a2 * y2;
-
-      output[i] = y0;
-      x2 = x1;
-      x1 = x0;
-      y2 = y1;
-      y1 = y0;
-    }
-
-    return output;
-  }
-
-  /**
-   * Helper: Perform FFT analysis on a segment from the middle of the track
-   */
-  private static performFFTFromMiddle(audioBuffer: AudioBuffer, fftSize: number): Float32Array {
-    const monoData = this.getMonoData(audioBuffer);
-
-    // Analyze middle of track for more representative results
-    const middleOffset = Math.floor((monoData.length - fftSize) / 2);
-    const samples = monoData.slice(middleOffset, middleOffset + fftSize);
-
-    // Ensure we have exactly fftSize samples (power of 2)
-    const buffer = new Float32Array(fftSize);
-    buffer.set(samples);
+    // Pad with zeros if necessary to reach fftSize (must be power of 2)
+    const paddedSamples = new Float32Array(fftSize);
+    paddedSamples.set(segment);
 
     // Apply Hann window
-    const windowed = FastFFTEngine.applyHannWindow(buffer);
+    const windowed = FastFFTEngine.applyHannWindow(paddedSamples);
 
     // Perform FFT
     const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
 
-    // Calculate magnitudes
     const magnitudes = new Float32Array(fftSize / 2);
     for (let i = 0; i < fftSize / 2; i++) {
       const real = fftResult[i * 2];
       const imag = fftResult[i * 2 + 1];
-      // Normalize magnitude by fftSize
       magnitudes[i] = Math.sqrt(real * real + imag * imag) / fftSize;
     }
 

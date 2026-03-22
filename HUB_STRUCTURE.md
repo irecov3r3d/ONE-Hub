@@ -1,6 +1,6 @@
-# ⚡ Bolt Branch Audit: Song Generator Pro
+# ⚡ Hub Structure: Song Generator Pro
 
-Based on the mission to identify branches that do not belong to the "Song Generator Pro" hub and need to be moved to their own repositories.
+This document defines the core branches belonging to the **Song Generator Pro Hub** and identifies unrelated branches that should be relocated to their own repositories.
 
 ## 🎵 Song Generator Pro Hub (Keep)
 These branches are core features, improvements, or related services for the Song Generator platform.
@@ -32,19 +32,13 @@ These branches are core features, improvements, or related services for the Song
 These branches are unrelated projects or standalone prototypes that clutter the main Song Generator Pro codebase.
 
 - `remotes/origin/LemmeGitDat--Modular-build-for-local-areas-to-track-through-community-whats-popping-near-them` (Community/Social app)
-- `claude/chrome-extension-replica-4L8Ec` (Browser extension)
-- `claude/firefox-teach-repeat-extension-gRNKL` (Browser extension)
+- `claude/chrome-extension-replica-*` (Browser extension)
+- `claude/firefox-teach-repeat-extension-*` (Browser extension)
 - `claude/keyboard-window-splitter-fCMem` (System utility)
 - `claude/multi-tab-ai-automation-X7gEG` (AI Automation tool)
-- `codex/build-linux-mint-desktop-environment` (OS customization)
+- `codex/build-linux-mint-desktop-environment*` (OS customization)
 - `codex/build-mvp-for-foodmarket-app` (E-commerce/Food app)
-- `codex/create-gemini-sidebar-extension-replica` (Browser extension)
+- `codex/create-gemini-sidebar-extension-replica*` (Browser extension)
 - `codex/create-gpt-studio-with-testing-tools` (Development tool)
 - `codex/simulated-experiences-demographic-impact-review` (Review/Analysis tool)
 - `feat/gemini-chrome-assistant-*` (Browser extension)
-
-## ⚡ Bolt Optimization Target
-The **Song Generator Pro Hub** currently suffers from redundant memory allocations and multiple buffer traversals during audio mastering and analysis. I am implementing the following optimizations:
-
-1.  **Single-Pass Audio Normalization**: Refactoring `AudioMasteringService.normalizeToLUFS` to calculate RMS energy directly from input channels and apply gain in-place, eliminating $O(N)$ allocations and a redundant mono conversion pass.
-2.  **Consolidated Level Analysis**: Refactoring `AudioAnalyzer.calculateLevels` to perform Peak and RMS detection in a single $O(N)$ loop, reducing buffer traversals and CPU overhead.
