@@ -76,6 +76,7 @@ export class AudioAnalysisService {
 
     const fileInfo = await this.extractFileInfo(file, audioBuffer);
     const channelData = this.extractChannelData(audioBuffer);
+    const mono = this.convertToMono(channelData);
 
     // ⚡ Bolt: Single-pass stats collection
     const stats = this.analyzeBasicStats(channelData);
