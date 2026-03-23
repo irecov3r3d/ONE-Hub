@@ -76,16 +76,12 @@ export class AudioAnalysisService {
 
     const fileInfo = await this.extractFileInfo(file, audioBuffer);
     const channelData = this.extractChannelData(audioBuffer);
-    const mono = this.convertToMono(channelData);
 
-    // ⚡ Bolt: Single-pass stats collection
+    // ⚡ Bolt: Single-pass stats collection (includes mono conversion)
     const stats = this.analyzeBasicStats(channelData);
 
     // ⚡ Bolt: Consolidate 8192-point FFT (used by Frequency and Harmonic analysis)
     const spectrum8192 = await this.fftEngine.performFFT(audioBuffer, 8192);
-
-    // ⚡ Bolt: Pre-calculate basic stats to avoid redundant passes
-    const stats = this.analyzeBasicStats(channelData);
 
     const [
       temporal,
@@ -103,7 +99,7 @@ export class AudioAnalysisService {
       this.analyzeMusicalFeatures(audioBuffer, stats),
       this.analyzeStereo(audioBuffer, channelData, stats),
       this.analyzeHarmonics(audioBuffer, channelData, spectrum8192),
-      this.generateSpectralData(audioBuffer, channelData),
+      this.generateSpectralData(audioBuffer, stats),
       this.analyzeQuality(audioBuffer, stats),
     ]);
 
@@ -374,7 +370,6 @@ export class AudioAnalysisService {
     const duration = audioBuffer.duration;
     const sectionLength = 8;
     const sections: AudioSection[] = [];
-    const mono = stats.mono;
 
     for (let time = 0; time < duration; time += sectionLength) {
       const endTime = Math.min(time + sectionLength, duration);
@@ -825,10 +820,6 @@ export class AudioAnalysisService {
       };
     }
 
-    // Calculate phase correlation using pre-computed sums
-    const denominator = Math.sqrt(stats.sumLL * stats.sumRR);
-    const phaseCorrelation = denominator > 0 ? stats.sumLR / denominator : 1;
-
     // ⚡ Bolt: Calculate phase correlation and pan balance in O(1) from pre-collected stats
     const denominator = Math.sqrt(stats.sumSqL * stats.sumSqR);
     const phaseCorrelation = denominator > 0 ? stats.sumLR / denominator : 1;
@@ -844,7 +835,7 @@ export class AudioAnalysisService {
     const sideContent = (rmsSide / (rmsMid + rmsSide + 1e-10)) * 100;
 
     const stereoWidth = (1 - phaseCorrelation) * 100;
-    const stereoField = this.analyzeStereoField(left, right, audioBuffer.sampleRate);
+    const stereoField = this.analyzeStereoField(stats.mono, audioBuffer.sampleRate);
 
     return {
       stereoWidth,
