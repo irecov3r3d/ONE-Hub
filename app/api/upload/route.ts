@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, unlink, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 
@@ -66,10 +66,31 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // TODO: Implement file deletion
-    // 1. Look up file path from database
-    // 2. Delete file from filesystem
-    // 3. Remove database entry
+    const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+
+    if (!existsSync(uploadsDir)) {
+      return NextResponse.json(
+        { error: 'Uploads directory not found' },
+        { status: 404 }
+      );
+    }
+
+    // Since we don't have a real database yet, we look for the file in the filesystem
+    // that matches the provided ID prefix exactly to avoid accidental deletions.
+    const files = await readdir(uploadsDir);
+    const fileName = files.find(f => {
+      const nameWithoutExt = f.substring(0, f.lastIndexOf('.')) || f;
+      return nameWithoutExt === fileId;
+    });
+
+    if (!fileName) {
+      return NextResponse.json(
+        { error: 'File not found' },
+        { status: 404 }
+      );
+    }
+
+    await unlink(path.join(uploadsDir, fileName));
 
     return NextResponse.json({ success: true });
   } catch (error) {
