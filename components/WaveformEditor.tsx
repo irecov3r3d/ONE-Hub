@@ -94,18 +94,19 @@ export default function WaveformEditor({ audioUrl, onSave }: WaveformEditorProps
     const rawData = audioBuffer.getChannelData(0);
     const samples = 1000; // Number of bars in waveform
     const blockSize = Math.floor(rawData.length / samples);
-    const filteredData: number[] = [];
+    const filteredData = new Float32Array(samples);
 
     for (let i = 0; i < samples; i++) {
-      const blockStart = blockSize * i;
+      const blockStart = i * blockSize;
+      const blockEnd = blockStart + blockSize;
       let sum = 0;
-      for (let j = 0; j < blockSize; j++) {
-        sum += Math.abs(rawData[blockStart + j]);
+      for (let j = blockStart; j < blockEnd; j++) {
+        sum += Math.abs(rawData[j]);
       }
-      filteredData.push(sum / blockSize);
+      filteredData[i] = sum / blockSize;
     }
 
-    return filteredData;
+    return Array.from(filteredData);
   };
 
   const drawWaveform = () => {
