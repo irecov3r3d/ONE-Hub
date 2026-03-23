@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { MultiModelService } from '@/lib/services/multiModelService';
 import type { ModelSelectionStrategy } from '@/lib/config/aiModels';
 
