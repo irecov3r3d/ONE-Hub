@@ -65,7 +65,7 @@ export class FastFFTEngine {
 
     // Use middle portion for analysis
     const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
-    const samples = channelData.slice(startSample, startSample + fftSize);
+    const samples = channelData.subarray(startSample, startSample + fftSize);
 
     // Apply Hann window
     const windowed = FastFFTEngine.applyHannWindow(samples);
@@ -236,7 +236,7 @@ export class FastFFTEngine {
 
     for (let frame = 0; frame < Math.min(numFrames, 200); frame++) {
       const startSample = frame * hopSize;
-      const samples = channelData.slice(startSample, startSample + fftSize);
+      const samples = channelData.subarray(startSample, startSample + fftSize);
 
       const windowed = FastFFTEngine.applyHannWindow(samples);
       const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);

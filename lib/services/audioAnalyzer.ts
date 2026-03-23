@@ -80,6 +80,7 @@ export class AudioAnalyzer {
    */
   private static async calculateSpectralClarity(audioBuffer: AudioBuffer): Promise<number> {
     const sampleRate = audioBuffer.sampleRate;
+    const channelData = audioBuffer.getChannelData(0);
 
     // Perform FFT analysis on a segment from the middle of the track
     const fftSize = 2048;
@@ -178,6 +179,7 @@ export class AudioAnalyzer {
   private static calculateFrequencyBalance(audioBuffer: AudioBuffer): number {
     const sampleRate = audioBuffer.sampleRate;
     const fftSize = 2048;
+    const channelData = audioBuffer.getChannelData(0);
 
     const frequencyBins = this.performFFT(channelData, fftSize, sampleRate);
 
@@ -249,6 +251,9 @@ export class AudioAnalyzer {
     const rmsDb = 20 * Math.log10(rms + 1e-10);
     const peakDb = 20 * Math.log10(peak + 1e-10);
 
+    // LUFS estimation (simplified) per ITU-R BS.1770
+    const lufs = -0.691 + rmsDb;
+
     return {
       rms: lufs,
       peak: peakDb,
@@ -317,6 +322,22 @@ export class AudioAnalyzer {
       metrics.promptAdherence * weights.promptAdherence;
 
     return score;
+  }
+
+  /**
+   * Helper: Get mono data from audio buffer
+   */
+  private static getMonoData(audioBuffer: AudioBuffer): Float32Array {
+    if (audioBuffer.numberOfChannels === 1) {
+      return audioBuffer.getChannelData(0);
+    }
+    const left = audioBuffer.getChannelData(0);
+    const right = audioBuffer.getChannelData(1);
+    const mono = new Float32Array(left.length);
+    for (let i = 0; i < left.length; i++) {
+      mono[i] = (left[i] + right[i]) / 2;
+    }
+    return mono;
   }
 
   /**
