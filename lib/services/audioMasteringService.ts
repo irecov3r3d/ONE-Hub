@@ -289,35 +289,29 @@ export class AudioMasteringService {
 
   /**
    * Apply compression
+   * ⚡ Bolt Optimization: Processes all compressor stages in-place on existing channel buffers.
    */
   private applyCompression(
     channels: Float32Array[],
     compSettings: CompressionSettings[],
     sampleRate: number
   ): Float32Array[] {
-    let processedChannels = channels.map(ch => {
-      const copy = new Float32Array(ch.length);
-      copy.set(ch);
-      return copy;
-    });
-
     for (const compressor of compSettings) {
       if (!compressor.enabled) continue;
-
-      processedChannels = this.applyCompressor(processedChannels, compressor, sampleRate);
+      this.applyCompressor(channels, compressor, sampleRate);
     }
-
-    return processedChannels;
+    return channels;
   }
 
   /**
    * Apply single compressor
+   * ⚡ Bolt Optimization: Operates in-place on provided channel buffers.
    */
   private applyCompressor(
-    channels: Float32Array<ArrayBufferLike>[],
+    channels: Float32Array[],
     settings: CompressionSettings,
     sampleRate: number
-  ): Float32Array<ArrayBuffer>[] {
+  ): void {
     const threshold = Math.pow(10, settings.threshold / 20);
     const ratio = settings.ratio;
     const attackSamples = (settings.attack / 1000) * sampleRate;
@@ -325,16 +319,18 @@ export class AudioMasteringService {
     const knee = settings.knee;
     const makeupGain = Math.pow(10, settings.makeupGain / 20);
 
-    const processedChannels = channels.map(channel => new Float32Array(channel.length));
     let envelope = 0;
+    const length = channels[0].length;
+    const numChannels = channels.length;
 
-    for (let i = 0; i < channels[0].length; i++) {
+    for (let i = 0; i < length; i++) {
       // Calculate stereo RMS for envelope detection
       let sumSquares = 0;
-      for (const channel of channels) {
-        sumSquares += channel[i] * channel[i];
+      for (let ch = 0; ch < numChannels; ch++) {
+        const sample = channels[ch][i];
+        sumSquares += sample * sample;
       }
-      const rms = Math.sqrt(sumSquares / channels.length);
+      const rms = Math.sqrt(sumSquares / numChannels);
 
       // Envelope follower
       if (rms > envelope) {
@@ -360,17 +356,17 @@ export class AudioMasteringService {
         }
       }
 
-      // Apply gain reduction and makeup gain to all channels
-      for (let ch = 0; ch < channels.length; ch++) {
-        processedChannels[ch][i] = channels[ch][i] * gainReduction * makeupGain;
+      // Apply gain reduction and makeup gain to all channels in-place
+      const totalGain = gainReduction * makeupGain;
+      for (let ch = 0; ch < numChannels; ch++) {
+        channels[ch][i] *= totalGain;
       }
     }
-
-    return processedChannels;
   }
 
   /**
    * Apply limiting
+   * ⚡ Bolt Optimization: Operates in-place on existing channel buffers.
    */
   private applyLimiting(
     channels: Float32Array[],
@@ -425,7 +421,6 @@ export class AudioMasteringService {
       }
     }
 
-    const processedChannels = channels.map(ch => new Float32Array(ch.length));
     let envelope = 0;
 
     for (let i = 0; i < length; i++) {
@@ -444,18 +439,18 @@ export class AudioMasteringService {
         gainReduction = threshold / envelope;
       }
 
-      // Apply limiting to all channels
+      // Apply limiting to all channels in-place
       for (let ch = 0; ch < numChannels; ch++) {
         let sample = channels[ch][i] * gainReduction;
 
         // Hard clip at ceiling
         sample = sample > ceiling ? ceiling : (sample < -ceiling ? -ceiling : sample);
 
-        processedChannels[ch][i] = sample;
+        channels[ch][i] = sample;
       }
     }
 
-    return processedChannels;
+    return channels;
   }
 
   /**
@@ -498,6 +493,7 @@ export class AudioMasteringService {
 
   /**
    * Apply harmonic exciter
+   * ⚡ Bolt Optimization: Operates in-place on existing channel buffers.
    */
   private applyExciter(
     channels: Float32Array[],
@@ -506,9 +502,8 @@ export class AudioMasteringService {
     const amount = settings.amount / 100;
     const mix = settings.mix / 100;
 
-    return channels.map(channel => {
-      const output = new Float32Array(channel.length);
-
+    for (let ch = 0; ch < channels.length; ch++) {
+      const channel = channels[ch];
       for (let i = 0; i < channel.length; i++) {
         const input = channel[i];
 
@@ -516,15 +511,16 @@ export class AudioMasteringService {
         const excited = Math.tanh(input * (1 + amount * 2));
 
         // Mix with dry signal
-        output[i] = input * (1 - mix) + excited * mix;
+        channel[i] = input * (1 - mix) + excited * mix;
       }
+    }
 
-      return output;
-    });
+    return channels;
   }
 
   /**
    * Apply saturation
+   * ⚡ Bolt Optimization: Operates in-place on existing channel buffers.
    */
   private applySaturation(
     channels: Float32Array[],
@@ -533,9 +529,8 @@ export class AudioMasteringService {
     const drive = settings.drive / 100;
     const mix = settings.mix / 100;
 
-    return channels.map(channel => {
-      const output = new Float32Array(channel.length);
-
+    for (let ch = 0; ch < channels.length; ch++) {
+      const channel = channels[ch];
       for (let i = 0; i < channel.length; i++) {
         const input = channel[i];
         let saturated = input;
@@ -572,11 +567,11 @@ export class AudioMasteringService {
         }
 
         // Mix with dry signal
-        output[i] = input * (1 - mix) + saturated * mix;
+        channel[i] = input * (1 - mix) + saturated * mix;
       }
+    }
 
-      return output;
-    });
+    return channels;
   }
 
   /**
@@ -625,6 +620,7 @@ export class AudioMasteringService {
 
   /**
    * Apply dithering
+   * ⚡ Bolt Optimization: Operates in-place on existing channel buffers.
    */
   private applyDithering(
     channels: Float32Array[],
@@ -635,9 +631,8 @@ export class AudioMasteringService {
     const targetBits = settings.depth;
     const steps = Math.pow(2, targetBits - 1);
 
-    return channels.map(channel => {
-      const output = new Float32Array(channel.length);
-
+    for (let ch = 0; ch < channels.length; ch++) {
+      const channel = channels[ch];
       for (let i = 0; i < channel.length; i++) {
         let sample = channel[i];
 
@@ -652,13 +647,11 @@ export class AudioMasteringService {
         }
 
         // Quantize
-        sample = Math.round(sample * steps) / steps;
-
-        output[i] = sample;
+        channel[i] = Math.round(sample * steps) / steps;
       }
+    }
 
-      return output;
-    });
+    return channels;
   }
 
 

@@ -30,6 +30,9 @@ These branches are core features, improvements, or related services for the Song
 - `fix-startup-and-upgrades-*` (Maintenance)
 - `improve-music-quality-*` (Quality maintenance)
 - `monorepo-extraction-script-fix-*` (Infrastructure maintenance)
+- `fix-insecure-randomness-upload-*` (Security maintenance)
+- `implement-file-deletion-*` (Feature maintenance)
+- `perf-optimize-waveform-generation-*` (Performance maintenance)
 
 ## 📦 Relocate (Move to own Repo)
 These branches are unrelated projects or standalone prototypes that clutter the main Song Generator Pro codebase.

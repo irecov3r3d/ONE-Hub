@@ -30,6 +30,9 @@ These branches are core features, improvements, or related services for the Song
 - `fix-startup-and-upgrades-*` (Maintenance)
 - `improve-music-quality-*` (Quality maintenance)
 - `monorepo-extraction-script-fix-*` (Infrastructure maintenance)
+- `fix-insecure-randomness-upload-*` (Security maintenance)
+- `implement-file-deletion-*` (Feature maintenance)
+- `perf-optimize-waveform-generation-*` (Performance maintenance)
 
 ## 📦 Relocate (Move to own Repo)
 These branches are unrelated projects or standalone prototypes that clutter the main Song Generator Pro codebase.
@@ -51,3 +54,4 @@ The **Song Generator Pro Hub** currently suffers from redundant memory allocatio
 
 1.  **Single-Pass Audio Normalization**: Refactoring `AudioMasteringService.normalizeToLUFS` to calculate RMS energy directly from input channels and apply gain in-place, eliminating $O(N)$ allocations and a redundant mono conversion pass.
 2.  **Consolidated Level Analysis**: Refactoring `AudioAnalyzer.calculateLevels` to perform Peak and RMS detection in a single $O(N)$ loop, reducing buffer traversals and CPU overhead.
+3.  **In-Place Mastering Chain**: Refactoring the entire mastering chain (`applyCompression`, `applySaturation`, `applyExciter`, `applyLimiting`, and `applyDithering`) to process audio in-place, eliminating up to 8 redundant $O(N)$ buffer allocations per track.
