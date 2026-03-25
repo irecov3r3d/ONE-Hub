@@ -120,7 +120,8 @@ export class AudioAnalyzer {
     const rmsValues: number[] = [];
 
     for (let i = 0; i < channelData.length; i += windowSize) {
-      const window = channelData.slice(i, i + windowSize);
+      // ⚡ Bolt: Use .subarray() to avoid expensive buffer copies
+      const window = channelData.subarray(i, i + windowSize);
       const rms = this.calculateRMS(window);
       if (rms > 0) rmsValues.push(rms);
     }
@@ -270,7 +271,8 @@ export class AudioAnalyzer {
     const rmsValues: number[] = [];
 
     for (let i = 0; i < channelData.length; i += windowSize) {
-      const window = channelData.slice(i, i + windowSize);
+      // ⚡ Bolt: Use .subarray() to avoid expensive buffer copies
+      const window = channelData.subarray(i, i + windowSize);
       const rms = this.calculateRMS(window);
       rmsValues.push(rms);
     }
@@ -360,7 +362,8 @@ export class AudioAnalyzer {
   private static performFFT(samples: Float32Array, fftSize: number, sampleRate: number): Float32Array {
     // Use middle portion for analysis
     const startSample = Math.floor(samples.length / 2) - Math.floor(fftSize / 2);
-    const segment = samples.slice(Math.max(0, startSample), Math.min(samples.length, startSample + fftSize));
+    // ⚡ Bolt: Use .subarray() to avoid expensive buffer copies
+    const segment = samples.subarray(Math.max(0, startSample), Math.min(samples.length, startSample + fftSize));
 
     // Pad with zeros if necessary to reach fftSize (must be power of 2)
     const paddedSamples = new Float32Array(fftSize);
