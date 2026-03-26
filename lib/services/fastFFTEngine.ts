@@ -111,48 +111,76 @@ export class FastFFTEngine {
   }
 
   /**
-   * Cooley-Tukey FFT algorithm (O(n log n) instead of O(n²))
+   * Perform bit-reversal permutation in-place.
+   * ⚡ Bolt Optimization: Reorders samples to enable iterative butterfly computation.
+   */
+  private static bitReverse(result: Float32Array, n: number): void {
+    let j = 0;
+    for (let i = 0; i < n; i++) {
+      if (i < j) {
+        // Swap real parts
+        const tempReal = result[i * 2];
+        result[i * 2] = result[j * 2];
+        result[j * 2] = tempReal;
+        // Swap imaginary parts
+        const tempImag = result[i * 2 + 1];
+        result[i * 2 + 1] = result[j * 2 + 1];
+        result[j * 2 + 1] = tempImag;
+      }
+      let m = n >> 1;
+      while (m >= 1 && j >= m) {
+        j -= m;
+        m >>= 1;
+      }
+      j += m;
+    }
+  }
+
+  /**
+   * Cooley-Tukey FFT algorithm (O(n log n)).
+   * ⚡ Bolt Optimization: Iterative in-place implementation.
+   * Eliminates O(N log N) recursive allocations and reduces GC pressure.
    */
   public static cooleyTukeyFFT(samples: Float32Array): Float32Array {
     const n = samples.length;
-
-    if (n <= 1) {
-      const result = new Float32Array(n * 2);
-      result[0] = samples[0];
-      result[1] = 0;
-      return result;
-    }
-
-    // Split into even and odd
-    const even = new Float32Array(n / 2);
-    const odd = new Float32Array(n / 2);
-
-    for (let i = 0; i < n / 2; i++) {
-      even[i] = samples[i * 2];
-      odd[i] = samples[i * 2 + 1];
-    }
-
-    // Recursive FFT
-    const fftEven = FastFFTEngine.cooleyTukeyFFT(even);
-    const fftOdd = FastFFTEngine.cooleyTukeyFFT(odd);
-
-    // Combine results
     const result = new Float32Array(n * 2);
-    const factors = FastFFTEngine.getTwiddleFactors(n);
 
-    for (let k = 0; k < n / 2; k++) {
-      const cos = factors[k * 2];
-      const sin = factors[k * 2 + 1];
-      const tReal = cos * fftOdd[k * 2] - sin * fftOdd[k * 2 + 1];
-      const tImag = sin * fftOdd[k * 2] + cos * fftOdd[k * 2 + 1];
+    // Initial copy: interleaved real = sample, imag = 0
+    for (let i = 0; i < n; i++) {
+      result[i * 2] = samples[i];
+      result[i * 2 + 1] = 0;
+    }
 
-      // k
-      result[k * 2] = fftEven[k * 2] + tReal;
-      result[k * 2 + 1] = fftEven[k * 2 + 1] + tImag;
+    // Bit-reversal permutation
+    FastFFTEngine.bitReverse(result, n);
 
-      // k + n/2
-      result[(k + n / 2) * 2] = fftEven[k * 2] - tReal;
-      result[(k + n / 2) * 2 + 1] = fftEven[k * 2 + 1] - tImag;
+    // Iterative butterfly computation
+    for (let len = 2; len <= n; len <<= 1) {
+      const halfLen = len >> 1;
+      // Get pre-calculated twiddle factors for this stage
+      const factors = FastFFTEngine.getTwiddleFactors(len);
+
+      for (let i = 0; i < n; i += len) {
+        for (let j = 0; j < halfLen; j++) {
+          const cos = factors[j * 2];
+          const sin = factors[j * 2 + 1];
+
+          const evenIdx = (i + j) * 2;
+          const oddIdx = (i + j + halfLen) * 2;
+
+          const rOdd = result[oddIdx];
+          const iOdd = result[oddIdx + 1];
+
+          // Complex multiplication: (cos + i*sin) * (rOdd + i*iOdd)
+          const tReal = cos * rOdd - sin * iOdd;
+          const tImag = sin * rOdd + cos * iOdd;
+
+          result[oddIdx] = result[evenIdx] - tReal;
+          result[oddIdx + 1] = result[evenIdx + 1] - tImag;
+          result[evenIdx] += tReal;
+          result[evenIdx + 1] += tImag;
+        }
+      }
     }
 
     return result;
