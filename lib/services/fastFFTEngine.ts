@@ -112,57 +112,80 @@ export class FastFFTEngine {
 
   /**
    * Cooley-Tukey FFT algorithm (O(n log n) instead of O(n²))
+   * ⚡ Bolt Optimization: Iterative in-place implementation to eliminate thousands of small buffer allocations.
    */
   public static cooleyTukeyFFT(samples: Float32Array): Float32Array {
     const n = samples.length;
+    const complexBuffer = new Float32Array(n * 2);
 
-    if (n <= 1) {
-      const result = new Float32Array(n * 2);
-      result[0] = samples[0];
-      result[1] = 0;
-      return result;
+    // Move real samples to complex buffer
+    for (let i = 0; i < n; i++) {
+      complexBuffer[i * 2] = samples[i];
+      complexBuffer[i * 2 + 1] = 0;
     }
 
-    // Split into even and odd
-    const even = new Float32Array(n / 2);
-    const odd = new Float32Array(n / 2);
+    this.inPlaceFFT(complexBuffer);
+    return complexBuffer;
+  }
 
-    for (let i = 0; i < n / 2; i++) {
-      even[i] = samples[i * 2];
-      odd[i] = samples[i * 2 + 1];
+  /**
+   * ⚡ Bolt Optimization: In-place iterative FFT on an interleaved complex buffer [real, imag, ...].
+   * Eliminates the O(N log N) recursive allocations of the previous implementation.
+   */
+  public static inPlaceFFT(data: Float32Array): void {
+    const n = data.length / 2;
+
+    // Bit-reversal permutation
+    for (let i = 0, j = 0; i < n; i++) {
+      if (i < j) {
+        // Swap real
+        const tempReal = data[i * 2];
+        data[i * 2] = data[j * 2];
+        data[j * 2] = tempReal;
+        // Swap imag
+        const tempImag = data[i * 2 + 1];
+        data[i * 2 + 1] = data[j * 2 + 1];
+        data[j * 2 + 1] = tempImag;
+      }
+      let m = n >> 1;
+      while (m >= 1 && j >= m) {
+        j -= m;
+        m >>= 1;
+      }
+      j += m;
     }
 
-    // Recursive FFT
-    const fftEven = FastFFTEngine.cooleyTukeyFFT(even);
-    const fftOdd = FastFFTEngine.cooleyTukeyFFT(odd);
+    // Butterfly computations
+    for (let len = 2; len <= n; len <<= 1) {
+      const factors = this.getTwiddleFactors(len);
+      for (let i = 0; i < n; i += len) {
+        for (let j = 0; j < len / 2; j++) {
+          const cos = factors[j * 2];
+          const sin = factors[j * 2 + 1];
 
-    // Combine results
-    const result = new Float32Array(n * 2);
-    const factors = FastFFTEngine.getTwiddleFactors(n);
+          const uIdx = (i + j) * 2;
+          const vIdx = (i + j + len / 2) * 2;
 
-    for (let k = 0; k < n / 2; k++) {
-      const cos = factors[k * 2];
-      const sin = factors[k * 2 + 1];
-      const tReal = cos * fftOdd[k * 2] - sin * fftOdd[k * 2 + 1];
-      const tImag = sin * fftOdd[k * 2] + cos * fftOdd[k * 2 + 1];
+          const vReal = data[vIdx];
+          const vImag = data[vIdx + 1];
 
-      // k
-      result[k * 2] = fftEven[k * 2] + tReal;
-      result[k * 2 + 1] = fftEven[k * 2 + 1] + tImag;
+          const tReal = cos * vReal - sin * vImag;
+          const tImag = sin * vReal + cos * vImag;
 
-      // k + n/2
-      result[(k + n / 2) * 2] = fftEven[k * 2] - tReal;
-      result[(k + n / 2) * 2 + 1] = fftEven[k * 2 + 1] - tImag;
+          data[vIdx] = data[uIdx] - tReal;
+          data[vIdx + 1] = data[uIdx + 1] - tImag;
+          data[uIdx] += tReal;
+          data[uIdx + 1] += tImag;
+        }
+      }
     }
-
-    return result;
   }
 
   /**
    * Apply Hann window to reduce spectral leakage.
-   * ⚡ Bolt: Caches window coefficients to avoid redundant Math.cos calls.
+   * ⚡ Bolt Optimization: Supports optional output buffer to avoid redundant allocations.
    */
-  public static applyHannWindow(samples: Float32Array): Float32Array {
+  public static applyHannWindow(samples: Float32Array, output?: Float32Array): Float32Array {
     const n = samples.length;
     let window = FastFFTEngine.hannWindowCache.get(n);
 
@@ -174,11 +197,11 @@ export class FastFFTEngine {
       FastFFTEngine.hannWindowCache.set(n, window);
     }
 
-    const windowed = new Float32Array(n);
+    const result = output || new Float32Array(n);
     for (let i = 0; i < n; i++) {
-      windowed[i] = samples[i] * window[i];
+      result[i] = samples[i] * window[i];
     }
-    return windowed;
+    return result;
   }
 
   /**
@@ -234,17 +257,28 @@ export class FastFFTEngine {
     // Process audio in overlapping windows
     const numFrames = Math.floor((channelData.length - fftSize) / hopSize);
 
+    // ⚡ Bolt Optimization: Reuse buffers to avoid per-frame allocations
+    const windowed = new Float32Array(fftSize);
+    const complexBuffer = new Float32Array(fftSize * 2);
+
     for (let frame = 0; frame < Math.min(numFrames, 200); frame++) {
       const startSample = frame * hopSize;
       const samples = channelData.subarray(startSample, startSample + fftSize);
 
-      const windowed = FastFFTEngine.applyHannWindow(samples);
-      const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
+      FastFFTEngine.applyHannWindow(samples, windowed);
+
+      // Prepare complex buffer
+      for (let i = 0; i < fftSize; i++) {
+        complexBuffer[i * 2] = windowed[i];
+        complexBuffer[i * 2 + 1] = 0;
+      }
+
+      FastFFTEngine.inPlaceFFT(complexBuffer);
 
       const frameMagnitudes: number[] = [];
       for (let i = 0; i < fftSize / 2; i++) {
-        const real = fftResult[i * 2];
-        const imag = fftResult[i * 2 + 1];
+        const real = complexBuffer[i * 2];
+        const imag = complexBuffer[i * 2 + 1];
         const magnitude = Math.sqrt(real * real + imag * imag) / fftSize;
         const magnitudeDB = magnitude > 0 ? 20 * Math.log10(magnitude) : -100;
         frameMagnitudes.push(magnitudeDB);
