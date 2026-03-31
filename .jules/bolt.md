@@ -9,3 +9,7 @@
 ## 2026-03-25 - In-Place Mastering Chain Performance
 **Learning:** The previous `AudioMasteringService` processing chain created new `Float32Array` buffers for every effect stage (Compression, Saturation, Exciter, Limiting, Dithering). For a 4-minute stereo track at 44.1kHz, each allocation is ~42MB. 8+ such allocations per mastering pass caused significant GC pressure and potentially hundreds of megabytes of overhead. Refactoring these to be in-place eliminates this overhead entirely.
 **Action:** In high-throughput audio pipelines, prioritize in-place buffer mutation over functional-style immutability to minimize memory churn.
+
+## 2026-03-26 - In-Place Mid/Side Transformation Efficiency
+**Learning:** Mid/Side processing typically involves encoding (L+R/2, L-R/2), gain application, and decoding back to L/R. Performing this via intermediate buffer allocations (e.g., `processedLeft`, `processedRight`) adds two O(N) allocations (~84MB for a 4-min stereo track). Implementing the transformation in-place by capturing source samples in local variables before writing to the same index avoids this memory overhead and reduces cache misses.
+**Action:** Always transform multi-channel audio data in-place by buffering the necessary input samples locally for each iteration.

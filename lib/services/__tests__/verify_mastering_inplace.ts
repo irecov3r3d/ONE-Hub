@@ -115,7 +115,25 @@ async function testInPlaceMastering() {
   channels[0].set(originalL);
   channels[1].set(originalR);
 
-  console.log('5. Testing In-Place Dithering...');
+  console.log('5. Testing In-Place Mid/Side Processing...');
+  const midSideSettings = {
+    enabled: true,
+    midGain: 3,
+    sideGain: -3,
+    stereoWidth: 120
+  };
+  // @ts-ignore
+  const resultMidSide = service.applyMidSideProcessing(channels, midSideSettings);
+
+  if (resultMidSide !== channels) throw new Error('applyMidSideProcessing did not return the same buffer instance');
+  if (channels[0][100] === originalL[100]) throw new Error('applyMidSideProcessing did not modify the buffer');
+  console.log('✅ In-Place Mid/Side Processing OK');
+
+  // Reset to original for next test
+  channels[0].set(originalL);
+  channels[1].set(originalR);
+
+  console.log('6. Testing In-Place Dithering...');
   const ditheringSettings = {
     enabled: true,
     type: 'triangular' as const,
