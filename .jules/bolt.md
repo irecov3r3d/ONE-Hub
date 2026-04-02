@@ -9,3 +9,7 @@
 ## 2026-03-25 - In-Place Mastering Chain Performance
 **Learning:** The previous `AudioMasteringService` processing chain created new `Float32Array` buffers for every effect stage (Compression, Saturation, Exciter, Limiting, Dithering). For a 4-minute stereo track at 44.1kHz, each allocation is ~42MB. 8+ such allocations per mastering pass caused significant GC pressure and potentially hundreds of megabytes of overhead. Refactoring these to be in-place eliminates this overhead entirely.
 **Action:** In high-throughput audio pipelines, prioritize in-place buffer mutation over functional-style immutability to minimize memory churn.
+
+## 2026-03-25 - Iterative In-Place FFT Engine
+**Learning:** Recursive FFT implementations incur $O(N \log N)$ memory allocations and function call overhead. Transitioning to an iterative Cooley-Tukey algorithm with bit-reversal permutation and bitwise operations (`1 << s`) significantly reduces GC pressure and improves execution speed for high-resolution spectral analysis.
+**Action:** Replace recursive signal processing algorithms with iterative, in-place equivalents wherever possible to maximize throughput.

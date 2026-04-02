@@ -112,47 +112,49 @@ export class FastFFTEngine {
 
   /**
    * Cooley-Tukey FFT algorithm (O(n log n) instead of O(n²))
+   * ⚡ Bolt: Iterative in-place implementation with bit-reversal permutation.
+   * Eliminates O(n log n) recursive buffer allocations and significantly reduces GC pressure.
    */
   public static cooleyTukeyFFT(samples: Float32Array): Float32Array {
     const n = samples.length;
-
-    if (n <= 1) {
-      const result = new Float32Array(n * 2);
-      result[0] = samples[0];
-      result[1] = 0;
-      return result;
-    }
-
-    // Split into even and odd
-    const even = new Float32Array(n / 2);
-    const odd = new Float32Array(n / 2);
-
-    for (let i = 0; i < n / 2; i++) {
-      even[i] = samples[i * 2];
-      odd[i] = samples[i * 2 + 1];
-    }
-
-    // Recursive FFT
-    const fftEven = FastFFTEngine.cooleyTukeyFFT(even);
-    const fftOdd = FastFFTEngine.cooleyTukeyFFT(odd);
-
-    // Combine results
+    const logN = Math.round(Math.log2(n));
     const result = new Float32Array(n * 2);
-    const factors = FastFFTEngine.getTwiddleFactors(n);
 
-    for (let k = 0; k < n / 2; k++) {
-      const cos = factors[k * 2];
-      const sin = factors[k * 2 + 1];
-      const tReal = cos * fftOdd[k * 2] - sin * fftOdd[k * 2 + 1];
-      const tImag = sin * fftOdd[k * 2] + cos * fftOdd[k * 2 + 1];
+    // 1. Bit-reversal permutation
+    for (let i = 0; i < n; i++) {
+      let j = 0;
+      for (let k = 0; k < logN; k++) {
+        if ((i >> k) & 1) {
+          j |= (1 << (logN - 1 - k));
+        }
+      }
+      result[j * 2] = samples[i];
+      result[j * 2 + 1] = 0;
+    }
 
-      // k
-      result[k * 2] = fftEven[k * 2] + tReal;
-      result[k * 2 + 1] = fftEven[k * 2 + 1] + tImag;
+    // 2. Iterative Cooley-Tukey stages
+    for (let s = 1; s <= logN; s++) {
+      const m = 1 << s;
+      const m2 = m >> 1;
+      const factors = FastFFTEngine.getTwiddleFactors(m);
 
-      // k + n/2
-      result[(k + n / 2) * 2] = fftEven[k * 2] - tReal;
-      result[(k + n / 2) * 2 + 1] = fftEven[k * 2 + 1] - tImag;
+      for (let k = 0; k < n; k += m) {
+        for (let j = 0; j < m2; j++) {
+          const cos = factors[j * 2];
+          const sin = factors[j * 2 + 1];
+
+          const tReal = cos * result[(k + j + m2) * 2] - sin * result[(k + j + m2) * 2 + 1];
+          const tImag = sin * result[(k + j + m2) * 2] + cos * result[(k + j + m2) * 2 + 1];
+
+          const uReal = result[(k + j) * 2];
+          const uImag = result[(k + j) * 2 + 1];
+
+          result[(k + j) * 2] = uReal + tReal;
+          result[(k + j) * 2 + 1] = uImag + tImag;
+          result[(k + j + m2) * 2] = uReal - tReal;
+          result[(k + j + m2) * 2 + 1] = uImag - tImag;
+        }
+      }
     }
 
     return result;
@@ -160,9 +162,9 @@ export class FastFFTEngine {
 
   /**
    * Apply Hann window to reduce spectral leakage.
-   * ⚡ Bolt: Caches window coefficients to avoid redundant Math.cos calls.
+   * ⚡ Bolt: Caches window coefficients and supports in-place modification.
    */
-  public static applyHannWindow(samples: Float32Array): Float32Array {
+  public static applyHannWindow(samples: Float32Array, inPlace: boolean = false): Float32Array {
     const n = samples.length;
     let window = FastFFTEngine.hannWindowCache.get(n);
 
@@ -174,11 +176,11 @@ export class FastFFTEngine {
       FastFFTEngine.hannWindowCache.set(n, window);
     }
 
-    const windowed = new Float32Array(n);
+    const output = inPlace ? samples : new Float32Array(n);
     for (let i = 0; i < n; i++) {
-      windowed[i] = samples[i] * window[i];
+      output[i] = samples[i] * window[i];
     }
-    return windowed;
+    return output;
   }
 
   /**
@@ -238,7 +240,9 @@ export class FastFFTEngine {
       const startSample = frame * hopSize;
       const samples = channelData.subarray(startSample, startSample + fftSize);
 
-      const windowed = FastFFTEngine.applyHannWindow(samples);
+      // ⚡ Bolt: Use in-place windowing on a copy to avoid mutating source buffer
+      // and pass directly to FFT to minimize allocations.
+      const windowed = FastFFTEngine.applyHannWindow(new Float32Array(samples), true);
       const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
 
       const frameMagnitudes: number[] = [];
