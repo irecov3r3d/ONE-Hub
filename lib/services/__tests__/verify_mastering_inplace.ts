@@ -130,6 +130,24 @@ async function testInPlaceMastering() {
   if (channels[0][100] === originalL[100]) throw new Error('applyDithering did not modify the buffer');
   console.log('✅ In-Place Dithering OK');
 
+  // Reset to original for next test
+  channels[0].set(originalL);
+  channels[1].set(originalR);
+
+  console.log('6. Testing In-Place Mid/Side Processing...');
+  const msSettings = {
+    enabled: true,
+    midGain: 2,
+    sideGain: -2,
+    stereoWidth: 120
+  };
+  // @ts-ignore
+  const resultMS = service.applyMidSideProcessing(channels, msSettings);
+
+  if (resultMS !== channels) throw new Error('applyMidSideProcessing did not return the same buffer instance');
+  if (channels[0][100] === originalL[100]) throw new Error('applyMidSideProcessing did not modify the buffer');
+  console.log('✅ In-Place Mid/Side OK');
+
   console.log('\n✨ ALL IN-PLACE MASTERING TESTS PASSED! ✨');
 }
 

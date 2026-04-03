@@ -467,28 +467,29 @@ export class AudioMasteringService {
 
     const left = channels[0];
     const right = channels[1];
-    const processedLeft = new Float32Array(left.length);
-    const processedRight = new Float32Array(right.length);
 
     const midGain = Math.pow(10, settings.midGain / 20);
     const sideGain = Math.pow(10, settings.sideGain / 20);
     const stereoWidth = settings.stereoWidth / 100;
 
     for (let i = 0; i < left.length; i++) {
+      const sL = left[i];
+      const sR = right[i];
+
       // Encode to mid/side
-      let mid = (left[i] + right[i]) / 2;
-      let side = (left[i] - right[i]) / 2;
+      let mid = (sL + sR) / 2;
+      let side = (sL - sR) / 2;
 
       // Apply gains
       mid *= midGain;
       side *= sideGain * stereoWidth;
 
-      // Decode back to left/right
-      processedLeft[i] = mid + side;
-      processedRight[i] = mid - side;
+      // Decode back to left/right and update in-place
+      left[i] = mid + side;
+      right[i] = mid - side;
     }
 
-    return [processedLeft, processedRight];
+    return channels;
   }
 
   /**
