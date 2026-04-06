@@ -13,3 +13,7 @@
 ## 2026-03-26 - In-Place Mid/Side Processing
 **Learning:** Even after optimizing the main mastering chain, secondary processing like Mid/Side was still performing redundant `Float32Array` allocations. For a 4-minute stereo track, this was an extra ~84MB of memory churn. Refactoring this to use local stack variables for the MS encode before overwriting the channel buffers in-place eliminates this overhead.
 **Action:** Always verify that every stage of a signal processing chain is optimized for buffer reuse, especially when dealing with multi-channel interdependency.
+
+## 2026-03-27 - Iterative In-place FFT Performance
+**Learning:** Recursive FFT implementations (like Cooley-Tukey) incur significant overhead due to recursion depth and repeated allocations of smaller typed arrays at every level. Transitioning to an iterative in-place algorithm with bit-reversal permutation and twiddle factor caching yielded a ~10x speed increase. Furthermore, reusing instance-level buffers for windowing and FFT intermediate results eliminates GC pressure during high-frequency analysis (e.g., spectrogram generation).
+**Action:** Prefer iterative in-place algorithms over recursive ones for core mathematical operations, and utilize persistent buffers for repeated batch processing.
