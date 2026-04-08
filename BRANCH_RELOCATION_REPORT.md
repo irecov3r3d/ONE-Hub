@@ -11,12 +11,14 @@ These branches are core features, improvements, or related services for the Song
 - **Visuals**: `claude/auto-split-video-clips-gwIQz` (Automated video/visualizer generation)
 - **Optimization**: `bolt/*` (Performance-focused enhancements across all services)
 
-**Collaboration Pattern**:
-1. **Input**: Vocal/Organic capture (Voice Recorder) and MIDI/Beat generation (Beat Maker).
-2. **Generation**: Multi-model AI ensemble (Core application) generates audio based on inputs.
-3. **Refinement**: Professional finishing via `AudioMasteringService` and quality validation via `AudioAnalysisService`.
-4. **Storage**: Final assets are stored and managed in the Music Vault.
-5. **Presentation**: Visualizers are generated for the final tracks.
+**⚡ Collaborative Ecosystem**:
+The Song Generator Pro Hub operates as an integrated AI-driven music production pipeline:
+1. **Capture & Creation**: Vocal/Organic inputs are captured via `Voice Recorder` (`codex/create-advanced-voice-recorder-app`), while rhythmic foundations are laid by `Beat Maker` (`claude/beat-maker-app-Fhpg2`).
+2. **AI Ensemble Generation**: The core application (`claude/song-generator-T7GUx`) orchestrates multiple AI models to generate high-fidelity audio based on these inputs.
+3. **Technical Analysis**: `AudioAnalysisService` (`claude/audio-analysis-mastering-tool-ySQzQ`) performs a deep technical dive into the generated audio, providing metrics like LUFS, peak, dynamic range, and frequency distribution.
+4. **Professional Mastering**: Based on analysis results, `AudioMasteringService` applies a professional finishing chain (EQ, Compression, Limiting, Stereo Enhancement) to prepare the track for release.
+5. **Vaulting & Storage**: Mastered assets are indexed and stored in the `Music Vault` (`claude/music-vault-app-DNlEb`) for user management.
+6. **Visual Presentation**: `Video Visualizer` features (`claude/auto-split-video-clips-gwIQz`) generate synchronized visuals for the final mastered tracks.
 
 ## 📦 Relocations (Move to separate repositories)
 The following branches are unrelated to the Song Generator Pro ecosystem and should be moved to their own repos:

@@ -111,48 +111,66 @@ export class FastFFTEngine {
   }
 
   /**
-   * Cooley-Tukey FFT algorithm (O(n log n) instead of O(n²))
+   * Iterative In-Place Cooley-Tukey FFT algorithm (O(n log n)).
+   * ⚡ Bolt Optimization:
+   * 1. Iterative approach eliminates O(n log n) recursive allocations and stack overhead.
+   * 2. Bit-reversal permutation allows in-place processing on a single buffer.
+   * 3. Pre-cached twiddle factors eliminate redundant trig calculations.
+   * 4. Returns interleaved [real, imag, ...] for compatibility with existing pipeline.
    */
   public static cooleyTukeyFFT(samples: Float32Array): Float32Array {
     const n = samples.length;
+    const real = new Float32Array(n);
+    const imag = new Float32Array(n);
 
-    if (n <= 1) {
-      const result = new Float32Array(n * 2);
-      result[0] = samples[0];
-      result[1] = 0;
-      return result;
+    // Initial copy to separate real/imag buffers
+    real.set(samples);
+
+    // 1. Bit-reversal permutation
+    for (let i = 0, j = 0; i < n; i++) {
+      if (i < j) {
+        const tempReal = real[i];
+        real[i] = real[j];
+        real[j] = tempReal;
+        // No need to swap imag as it's initially all zeros
+      }
+      let m = n >> 1;
+      while (m >= 1 && j >= m) {
+        j -= m;
+        m >>= 1;
+      }
+      j += m;
     }
 
-    // Split into even and odd
-    const even = new Float32Array(n / 2);
-    const odd = new Float32Array(n / 2);
+    // 2. Iterative combine stages
+    for (let len = 2; len <= n; len <<= 1) {
+      const halfLen = len >> 1;
+      const factors = FastFFTEngine.getTwiddleFactors(len);
 
-    for (let i = 0; i < n / 2; i++) {
-      even[i] = samples[i * 2];
-      odd[i] = samples[i * 2 + 1];
+      for (let i = 0; i < n; i += len) {
+        for (let j = 0; j < halfLen; j++) {
+          const cos = factors[j * 2];
+          const sin = factors[j * 2 + 1];
+
+          const vReal = real[i + j + halfLen] * cos - imag[i + j + halfLen] * sin;
+          const vImag = real[i + j + halfLen] * sin + imag[i + j + halfLen] * cos;
+
+          const uReal = real[i + j];
+          const uImag = imag[i + j];
+
+          real[i + j] = uReal + vReal;
+          imag[i + j] = uImag + vImag;
+          real[i + j + halfLen] = uReal - vReal;
+          imag[i + j + halfLen] = uImag - vImag;
+        }
+      }
     }
 
-    // Recursive FFT
-    const fftEven = FastFFTEngine.cooleyTukeyFFT(even);
-    const fftOdd = FastFFTEngine.cooleyTukeyFFT(odd);
-
-    // Combine results
+    // 3. Interleave results for output
     const result = new Float32Array(n * 2);
-    const factors = FastFFTEngine.getTwiddleFactors(n);
-
-    for (let k = 0; k < n / 2; k++) {
-      const cos = factors[k * 2];
-      const sin = factors[k * 2 + 1];
-      const tReal = cos * fftOdd[k * 2] - sin * fftOdd[k * 2 + 1];
-      const tImag = sin * fftOdd[k * 2] + cos * fftOdd[k * 2 + 1];
-
-      // k
-      result[k * 2] = fftEven[k * 2] + tReal;
-      result[k * 2 + 1] = fftEven[k * 2 + 1] + tImag;
-
-      // k + n/2
-      result[(k + n / 2) * 2] = fftEven[k * 2] - tReal;
-      result[(k + n / 2) * 2 + 1] = fftEven[k * 2 + 1] - tImag;
+    for (let i = 0; i < n; i++) {
+      result[i * 2] = real[i];
+      result[i * 2 + 1] = imag[i];
     }
 
     return result;
@@ -160,9 +178,12 @@ export class FastFFTEngine {
 
   /**
    * Apply Hann window to reduce spectral leakage.
-   * ⚡ Bolt: Caches window coefficients to avoid redundant Math.cos calls.
+   * ⚡ Bolt Optimization:
+   * 1. Caches window coefficients to avoid redundant Math.cos calls.
+   * 2. Supports in-place processing if outBuffer is provided as samples itself.
+   * 3. Prevents redundant allocations when used in tight loops (e.g. spectrogram).
    */
-  public static applyHannWindow(samples: Float32Array): Float32Array {
+  public static applyHannWindow(samples: Float32Array, outBuffer?: Float32Array): Float32Array {
     const n = samples.length;
     let window = FastFFTEngine.hannWindowCache.get(n);
 
@@ -174,11 +195,11 @@ export class FastFFTEngine {
       FastFFTEngine.hannWindowCache.set(n, window);
     }
 
-    const windowed = new Float32Array(n);
+    const output = outBuffer || new Float32Array(n);
     for (let i = 0; i < n; i++) {
-      windowed[i] = samples[i] * window[i];
+      output[i] = samples[i] * window[i];
     }
-    return windowed;
+    return output;
   }
 
   /**
@@ -208,7 +229,11 @@ export class FastFFTEngine {
   }
 
   /**
-   * Calculate spectrogram (time-frequency representation)
+   * Calculate spectrogram (time-frequency representation).
+   * ⚡ Bolt Optimization:
+   * 1. Removed arbitrary 200-frame limit to allow full-track analysis.
+   * 2. Reuses `windowBuffer` to eliminate O(N) allocations per frame.
+   * 3. Leverages optimized iterative FFT for high throughput.
    */
   async calculateSpectrogram(
     audioBuffer: AudioBuffer,
@@ -233,13 +258,15 @@ export class FastFFTEngine {
 
     // Process audio in overlapping windows
     const numFrames = Math.floor((channelData.length - fftSize) / hopSize);
+    const windowBuffer = new Float32Array(fftSize);
 
-    for (let frame = 0; frame < Math.min(numFrames, 200); frame++) {
+    for (let frame = 0; frame < numFrames; frame++) {
       const startSample = frame * hopSize;
       const samples = channelData.subarray(startSample, startSample + fftSize);
 
-      const windowed = FastFFTEngine.applyHannWindow(samples);
-      const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
+      // In-place windowing into windowBuffer
+      FastFFTEngine.applyHannWindow(samples, windowBuffer);
+      const fftResult = FastFFTEngine.cooleyTukeyFFT(windowBuffer);
 
       const frameMagnitudes: number[] = [];
       for (let i = 0; i < fftSize / 2; i++) {
