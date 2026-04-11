@@ -693,7 +693,9 @@ export class AudioAnalysisService {
   }
 
   /**
-   * Calculate loudness over time.
+   * Calculate loudness over time using an O(N) sliding window.
+   * ⚡ Bolt Optimization: Replaces O(N * window/hop) nested loop with a single pass
+   * using a sliding sum of squares and a deque-based sliding window maximum.
    */
   private calculateLoudnessOverTime(
     mono: Float32Array,
@@ -703,25 +705,58 @@ export class AudioAnalysisService {
     const hopSize = Math.floor(sampleRate * 0.1);
     const loudnessPoints: LoudnessPoint[] = [];
 
-    for (let i = 0; i < mono.length - windowSize; i += hopSize) {
-      let sumSquares = 0;
-      let peak = 0;
+    if (mono.length < windowSize) return [];
 
-      for (let j = 0; j < windowSize; j++) {
-        const sample = mono[i + j];
-        sumSquares += sample * sample;
-        peak = Math.max(peak, Math.abs(sample));
+    let currentSumSquares = 0;
+    const deque: number[] = [];
+    let head = 0;
+
+    // Initialize first window
+    for (let i = 0; i < windowSize; i++) {
+      const val = mono[i];
+      currentSumSquares += val * val;
+
+      const absVal = Math.abs(val);
+      while (deque.length > head && Math.abs(mono[deque[deque.length - 1]]) <= absVal) {
+        deque.pop();
       }
+      deque.push(i);
+    }
 
-      const rms = Math.sqrt(sumSquares / windowSize);
+    const addPoint = (startIndex: number, sumSq: number, peak: number) => {
+      const rms = Math.sqrt(Math.max(0, sumSq) / windowSize);
       const lufs = -0.691 + 10 * Math.log10(rms * rms + 1e-10);
       const peakdB = peak > 0 ? 20 * Math.log10(peak) : -100;
 
       loudnessPoints.push({
-        time: i / sampleRate,
+        time: startIndex / sampleRate,
         lufs,
         peak: peakdB,
       });
+    };
+
+    addPoint(0, currentSumSquares, Math.abs(mono[deque[head]]));
+
+    // Slide window by hopSize
+    for (let i = hopSize; i <= mono.length - windowSize; i += hopSize) {
+      // Move window from i - hopSize to i
+      for (let j = i - hopSize; j < i; j++) {
+        const oldVal = mono[j];
+        const newVal = mono[j + windowSize];
+        currentSumSquares += newVal * newVal - oldVal * oldVal;
+
+        // Update sliding maximum deque
+        if (deque[head] <= j) {
+          head++;
+        }
+        const absNew = Math.abs(newVal);
+        while (deque.length > head && Math.abs(mono[deque[deque.length - 1]]) <= absNew) {
+          deque.pop();
+        }
+        deque.push(j + windowSize);
+      }
+
+      addPoint(i, currentSumSquares, Math.abs(mono[deque[head]]));
     }
 
     return loudnessPoints;

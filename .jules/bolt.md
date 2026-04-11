@@ -13,3 +13,7 @@
 ## 2026-03-26 - In-Place Mid/Side Processing
 **Learning:** Even after optimizing the main mastering chain, secondary processing like Mid/Side was still performing redundant `Float32Array` allocations. For a 4-minute stereo track, this was an extra ~84MB of memory churn. Refactoring this to use local stack variables for the MS encode before overwriting the channel buffers in-place eliminates this overhead.
 **Action:** Always verify that every stage of a signal processing chain is optimized for buffer reuse, especially when dealing with multi-channel interdependency.
+
+## 2026-03-27 - O(N) Sliding Window Loudness Analysis
+**Learning:** The previous `calculateLoudnessOverTime` implementation used a nested loop, re-calculating the sum of squares and peak for every window, which is $O(N \cdot \text{window})$. By using a sliding sum of squares and a monotonic deque for the sliding maximum, we achieve true $O(N)$ complexity. For standard 400ms windows and 100ms hops, this reduces redundant calculations by 4x.
+**Action:** Use sliding window accumulators and monotonic deques for any time-series analysis involving rolling windows (loudness, energy envelopes, rolling peaks).
