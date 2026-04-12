@@ -13,3 +13,7 @@
 ## 2026-03-26 - In-Place Mid/Side Processing
 **Learning:** Even after optimizing the main mastering chain, secondary processing like Mid/Side was still performing redundant `Float32Array` allocations. For a 4-minute stereo track, this was an extra ~84MB of memory churn. Refactoring this to use local stack variables for the MS encode before overwriting the channel buffers in-place eliminates this overhead.
 **Action:** Always verify that every stage of a signal processing chain is optimized for buffer reuse, especially when dealing with multi-channel interdependency.
+
+## 2026-03-27 - Iterative In-Place FFT & Buffer Reuse
+**Learning:** Recursive FFT implementations in JS/TS generate significant GC pressure due to (N \log N)$ intermediate array allocations. For an 8192-point FFT, this is thousands of arrays per call. Switching to an iterative in-place Cooley-Tukey algorithm reduces allocations to (1)$. Furthermore, pre-allocating and reusing a single `windowBuffer` in `calculateSpectrogram` eliminates memory churn during windowing of hundreds of frames.
+**Action:** Always prefer iterative, in-place DSP algorithms and leverage instance-level buffer reuse for high-frequency operations like spectrogram generation.
