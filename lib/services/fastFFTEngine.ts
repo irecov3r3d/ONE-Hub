@@ -7,6 +7,7 @@ export class FastFFTEngine {
   private audioContext: AudioContext;
   private static hannWindowCache: Map<number, Float32Array> = new Map();
   private static twiddleCache: Map<number, Float32Array> = new Map();
+  private static bitReverseCache: Map<number, Uint32Array> = new Map();
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
@@ -67,7 +68,7 @@ export class FastFFTEngine {
     const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
     const samples = channelData.subarray(startSample, startSample + fftSize);
 
-    // Apply Hann window
+    // Apply Hann window (creates a copy because subarray is read-only view)
     const windowed = FastFFTEngine.applyHannWindow(samples);
 
     // Perform FFT using Cooley-Tukey algorithm
@@ -111,48 +112,62 @@ export class FastFFTEngine {
   }
 
   /**
-   * Cooley-Tukey FFT algorithm (O(n log n) instead of O(n²))
+   * Iterative In-Place Cooley-Tukey FFT algorithm (O(n log n))
+   * ⚡ Bolt Optimization:
+   * 1. Iterative implementation avoids recursive overhead and stack usage.
+   * 2. In-place processing using bit-reversal permutation reduces auxiliary memory to O(1).
+   * 3. Bit-reversal indices are cached to avoid redundant calculations.
    */
   public static cooleyTukeyFFT(samples: Float32Array): Float32Array {
     const n = samples.length;
-
-    if (n <= 1) {
-      const result = new Float32Array(n * 2);
-      result[0] = samples[0];
-      result[1] = 0;
-      return result;
-    }
-
-    // Split into even and odd
-    const even = new Float32Array(n / 2);
-    const odd = new Float32Array(n / 2);
-
-    for (let i = 0; i < n / 2; i++) {
-      even[i] = samples[i * 2];
-      odd[i] = samples[i * 2 + 1];
-    }
-
-    // Recursive FFT
-    const fftEven = FastFFTEngine.cooleyTukeyFFT(even);
-    const fftOdd = FastFFTEngine.cooleyTukeyFFT(odd);
-
-    // Combine results
     const result = new Float32Array(n * 2);
-    const factors = FastFFTEngine.getTwiddleFactors(n);
 
-    for (let k = 0; k < n / 2; k++) {
-      const cos = factors[k * 2];
-      const sin = factors[k * 2 + 1];
-      const tReal = cos * fftOdd[k * 2] - sin * fftOdd[k * 2 + 1];
-      const tImag = sin * fftOdd[k * 2] + cos * fftOdd[k * 2 + 1];
+    // Get bit-reversal indices
+    let bitReverse = FastFFTEngine.bitReverseCache.get(n);
+    if (!bitReverse) {
+      bitReverse = new Uint32Array(n);
+      const logN = Math.log2(n);
+      for (let i = 0; i < n; i++) {
+        let rev = 0;
+        for (let j = 0; j < logN; j++) {
+          if ((i & (1 << j)) !== 0) {
+            rev |= (1 << (logN - 1 - j));
+          }
+        }
+        bitReverse[i] = rev;
+      }
+      FastFFTEngine.bitReverseCache.set(n, bitReverse);
+    }
 
-      // k
-      result[k * 2] = fftEven[k * 2] + tReal;
-      result[k * 2 + 1] = fftEven[k * 2 + 1] + tImag;
+    // Initial permutation (bit-reversal)
+    for (let i = 0; i < n; i++) {
+      result[i * 2] = samples[bitReverse[i]];
+      result[i * 2 + 1] = 0;
+    }
 
-      // k + n/2
-      result[(k + n / 2) * 2] = fftEven[k * 2] - tReal;
-      result[(k + n / 2) * 2 + 1] = fftEven[k * 2 + 1] - tImag;
+    // Iterative butterfly stages
+    for (let s = 1; s <= Math.log2(n); s++) {
+      const m = Math.pow(2, s);
+      const m2 = m >> 1;
+      const factors = FastFFTEngine.getTwiddleFactors(m);
+
+      for (let k = 0; k < n; k += m) {
+        for (let j = 0; j < m2; j++) {
+          const cos = factors[j * 2];
+          const sin = factors[j * 2 + 1];
+
+          const tReal = cos * result[(k + j + m2) * 2] - sin * result[(k + j + m2) * 2 + 1];
+          const tImag = sin * result[(k + j + m2) * 2] + cos * result[(k + j + m2) * 2 + 1];
+
+          const uReal = result[(k + j) * 2];
+          const uImag = result[(k + j) * 2 + 1];
+
+          result[(k + j) * 2] = uReal + tReal;
+          result[(k + j) * 2 + 1] = uImag + tImag;
+          result[(k + j + m2) * 2] = uReal - tReal;
+          result[(k + j + m2) * 2 + 1] = uImag - tImag;
+        }
+      }
     }
 
     return result;
@@ -160,9 +175,9 @@ export class FastFFTEngine {
 
   /**
    * Apply Hann window to reduce spectral leakage.
-   * ⚡ Bolt: Caches window coefficients to avoid redundant Math.cos calls.
+   * ⚡ Bolt Optimization: Caches window coefficients and supports in-place operation.
    */
-  public static applyHannWindow(samples: Float32Array): Float32Array {
+  public static applyHannWindow(samples: Float32Array, inPlace: boolean = false): Float32Array {
     const n = samples.length;
     let window = FastFFTEngine.hannWindowCache.get(n);
 
@@ -174,11 +189,11 @@ export class FastFFTEngine {
       FastFFTEngine.hannWindowCache.set(n, window);
     }
 
-    const windowed = new Float32Array(n);
+    const result = inPlace ? samples : new Float32Array(n);
     for (let i = 0; i < n; i++) {
-      windowed[i] = samples[i] * window[i];
+      result[i] = samples[i] * window[i];
     }
-    return windowed;
+    return result;
   }
 
   /**
@@ -238,6 +253,7 @@ export class FastFFTEngine {
       const startSample = frame * hopSize;
       const samples = channelData.subarray(startSample, startSample + fftSize);
 
+      // Apply Hann window (creates a copy because subarray is read-only view)
       const windowed = FastFFTEngine.applyHannWindow(samples);
       const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
 
