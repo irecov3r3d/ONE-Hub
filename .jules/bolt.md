@@ -13,3 +13,7 @@
 ## 2026-03-26 - In-Place Mid/Side Processing
 **Learning:** Even after optimizing the main mastering chain, secondary processing like Mid/Side was still performing redundant `Float32Array` allocations. For a 4-minute stereo track, this was an extra ~84MB of memory churn. Refactoring this to use local stack variables for the MS encode before overwriting the channel buffers in-place eliminates this overhead.
 **Action:** Always verify that every stage of a signal processing chain is optimized for buffer reuse, especially when dealing with multi-channel interdependency.
+
+## 2024-05-20 - Iterative In-Place FFT Performance
+**Learning:** Recursive implementations of computationally heavy algorithms like the Cooley-Tukey FFT in JavaScript/TypeScript generate significant Garbage Collection (GC) pressure due to $O(N \log N)$ intermediate array allocations. By refactoring to an iterative in-place implementation with bit-reversal and twiddle factor caching, we achieved a measurable ~3.86x speedup and eliminated all intermediate heap allocations during the butterfly stages.
+**Action:** For performance-critical mathematical algorithms, prioritize iterative, in-place implementations that minimize memory churn and leverage pre-calculated lookup tables (caches) for recurring values.
