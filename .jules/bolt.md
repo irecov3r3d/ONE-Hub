@@ -13,3 +13,7 @@
 ## 2026-03-26 - In-Place Mid/Side Processing
 **Learning:** Even after optimizing the main mastering chain, secondary processing like Mid/Side was still performing redundant `Float32Array` allocations. For a 4-minute stereo track, this was an extra ~84MB of memory churn. Refactoring this to use local stack variables for the MS encode before overwriting the channel buffers in-place eliminates this overhead.
 **Action:** Always verify that every stage of a signal processing chain is optimized for buffer reuse, especially when dealing with multi-channel interdependency.
+
+## 2026-03-27 - Numerically Stable Sliding Window Loudness
+**Learning:** Implementing (N)$ sliding window algorithms for audio (like loudness or peak detection) offers significant speedups over nested-loop (N \cdot W/H)$ approaches, but introduces risks. Floating-point drift in sum-of-squares can lead to `NaN` over millions of samples. Deque-based peak trackers can leak memory if not properly managed.
+**Action:** Always include periodic recalculation (e.g., every 60s of audio) and safety clamps (`Math.max(0, ...)`) for sliding sums. Use `deque.shift()` or similar for memory-safe peak tracking.

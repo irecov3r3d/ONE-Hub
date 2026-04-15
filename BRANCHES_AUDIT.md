@@ -1,57 +1,55 @@
-# ⚡ Bolt Branch Audit: Song Generator Pro
+# ⚡ Song Generator Pro: Hub Audit & Relocation Strategy
 
-Based on the mission to identify branches that do not belong to the "Song Generator Pro" hub and need to be moved to their own repositories.
+## 🎯 Hub Mission: Song Generator Pro
+The Song Generator Pro Hub is an integrated AI-driven music production ecosystem. It enables users to capture ideas, generate professional-grade tracks using multi-model AI, refine them with automated mastering/analysis, and manage their music library.
 
-## 🎵 Song Generator Pro Hub (Keep)
-These branches are core features, improvements, or related services for the Song Generator platform.
+---
 
-- `main` / `claude/song-generator-T7GUx` (Core application and UI)
-- `claude/audio-analysis-mastering-tool-ySQzQ` (Audio Analysis & Mastering)
-- `claude/auto-split-video-clips-gwIQz` (Video Visualizer features)
-- `claude/beat-maker-app-Fhpg2` (Beat creation integration)
-- `claude/music-vault-app-DNlEb` (Song library/vault)
-- `codex/add-mvp-features-for-voice-recorder` (Voice recording feature)
-- `codex/create-advanced-voice-recorder-app` (Advanced voice recording)
-- `codex/start-ios-build-for-voice-control-studio` (Mobile integration)
-- `bolt/*` (Performance optimizations)
-- `feature-save-to-library-*` (User library features)
-- `usability-improvements-*` (UX enhancements)
-- `security-fix-*` (Security maintenance)
-- `claude/add-error-handling-*` (General maintenance)
-- `claude/analyze-prioritize-improvements-*` (Maintenance)
-- `claude/review-changes-*` (Maintenance)
-- `claude/initial-setup-*` (Infrastructure)
-- `codex/organize-file-folders-neatly` (Maintenance)
-- `main-*` (Main application)
-- `audio-analyzer-rms-optimization-*` (Performance maintenance)
-- `improve-analyzer-accuracy-*` (Quality maintenance)
-- `add-mastering-presets-tests-*` (Testing maintenance)
-- `cleanup-mastering-logs-*` (Maintenance)
-- `fix-startup-and-upgrades-*` (Maintenance)
-- `improve-music-quality-*` (Quality maintenance)
-- `monorepo-extraction-script-fix-*` (Infrastructure maintenance)
-- `fix-insecure-randomness-upload-*` (Security maintenance)
-- `implement-file-deletion-*` (Feature maintenance)
-- `perf-optimize-waveform-generation-*` (Performance maintenance)
+## 🎵 Song Generator Pro Hub (KEEP)
+These branches are essential components of the integrated ecosystem. They collaborate through shared types and services (e.g., `AudioAnalysisService`, `AudioMasteringService`).
 
-## 📦 Relocate (Move to own Repo)
-These branches are unrelated projects or standalone prototypes that clutter the main Song Generator Pro codebase.
+| Branch Name | Component | Role in Hub |
+| :--- | :--- | :--- |
+| `main` / `claude/song-generator-T7GUx` | **Core Platform** | Central hub UI, AI generation orchestration, and project management. |
+| `claude/audio-analysis-mastering-tool-ySQzQ` | **Mastering & Analysis** | Quality metrics and professional finishing. Essential for "Song Generator" quality. |
+| `claude/music-vault-app-DNlEb` | **Music Vault** | Long-term asset storage, versioning, and library management for generated tracks. |
+| `claude/beat-maker-app-Fhpg2` | **Beat Maker** | Rhythmic foundation generation. Provides MIDI/Audio loops for the generator. |
+| `codex/create-advanced-voice-recorder-app` | **Voice Recorder** | Organic capture. Allows users to record vocals/instruments to be used as AI seeds. |
+| `claude/auto-split-video-clips-gwIQz` | **Video Visualizer** | Marketing/Presentation layer. Generates visualizers for finished tracks. |
+| `bolt/*` | **Optimization** | Performance enhancements that make the entire ecosystem faster and more efficient. |
 
-- `remotes/origin/LemmeGitDat--Modular-build-for-local-areas-to-track-through-community-whats-popping-near-them` (Community/Social app)
-- `claude/chrome-extension-replica-*` (Browser extension)
-- `claude/firefox-teach-repeat-extension-*` (Browser extension)
-- `claude/keyboard-window-splitter-fCMem` (System utility)
-- `claude/multi-tab-ai-automation-X7gEG` (AI Automation tool)
-- `codex/build-linux-mint-desktop-environment*` (OS customization)
-- `codex/build-mvp-for-foodmarket-app` (E-commerce/Food app)
-- `codex/create-gemini-sidebar-extension-replica*` (Browser extension)
-- `codex/create-gpt-studio-with-testing-tools` (Development tool)
-- `codex/simulated-experiences-demographic-impact-review` (Review/Analysis tool)
-- `feat/gemini-chrome-assistant-*` (Browser extension)
+### Hub Collaboration Flow:
+1.  **Ideation**: Capture raw audio (`Voice Recorder`) or generate a rhythmic base (`Beat Maker`).
+2.  **Generation**: The `Core Platform` uses AI to expand ideas into full tracks.
+3.  **Refinement**: `AudioAnalysisService` validates quality; `AudioMasteringService` applies professional finishing.
+4.  **Storage**: Finished assets are committed to the `Music Vault`.
+5.  **Distribution**: `Video Visualizer` creates social-media-ready content for the track.
 
-## ⚡ Bolt Optimization Target
-The **Song Generator Pro Hub** currently suffers from redundant memory allocations and multiple buffer traversals during audio mastering and analysis. I am implementing the following optimizations:
+---
 
-1.  **Single-Pass Audio Normalization**: Refactoring `AudioMasteringService.normalizeToLUFS` to calculate RMS energy directly from input channels and apply gain in-place, eliminating $O(N)$ allocations and a redundant mono conversion pass.
-2.  **Consolidated Level Analysis**: Refactoring `AudioAnalyzer.calculateLevels` to perform Peak and RMS detection in a single $O(N)$ loop, reducing buffer traversals and CPU overhead.
-3.  **In-Place Mastering Chain**: Refactoring the entire mastering chain (`applyCompression`, `applySaturation`, `applyExciter`, `applyLimiting`, and `applyDithering`) to process audio in-place, eliminating up to 8 redundant $O(N)$ buffer allocations per track.
+## 📦 Unrelated Branches (RELOCATE)
+The following branches are standalone applications or utilities that do not contribute to the music production workflow and clutter the repository. They should be moved to separate repositories.
+
+### 🌐 Browser Extensions
+- `claude/chrome-extension-replica-4L8Ec`
+- `claude/firefox-teach-repeat-extension-gRNKL`
+- `codex/create-gemini-sidebar-extension-replica`
+- `feat/gemini-chrome-assistant-*`
+
+### 💻 System & Productivity Utilities
+- `claude/keyboard-window-splitter-fCMem` (Windows management)
+- `claude/multi-tab-ai-automation-X7gEG` (General AI automation)
+- `codex/create-gpt-studio-with-testing-tools` (Generic LLM tool)
+
+### 🛒 Standalone Apps
+- `codex/build-mvp-for-foodmarket-app` (E-commerce)
+- `remotes/origin/LemmeGitDat--Modular-build...` (Community/Social)
+
+### 🔬 Research & Specialized Tools
+- `codex/build-linux-mint-desktop-environment` (OS Customization)
+- `codex/simulated-experiences-demographic-impact-review` (Sociological Analysis)
+
+---
+
+## ⚡ Bolt Optimization: Stable Loudness Analysis
+To improve the efficiency of the `AudioAnalysisService`, I am implementing a memory-efficient, numerically stable $O(N)$ sliding-window loudness analysis. This makes the "Refinement" stage of the hub workflow significantly faster for long tracks without risking memory overflow or precision drift.

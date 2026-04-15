@@ -694,6 +694,9 @@ export class AudioAnalysisService {
 
   /**
    * Calculate loudness over time.
+   * ⚡ Bolt Optimization: Uses an $O(N)$ sliding window approach.
+   * Maintains a running sum of squares for LUFS and a deque-based sliding window maximum for peaks.
+   * Optimized for memory efficiency (no large auxiliary arrays) and numerical stability.
    */
   private calculateLoudnessOverTime(
     mono: Float32Array,
@@ -703,18 +706,35 @@ export class AudioAnalysisService {
     const hopSize = Math.floor(sampleRate * 0.1);
     const loudnessPoints: LoudnessPoint[] = [];
 
-    for (let i = 0; i < mono.length - windowSize; i += hopSize) {
-      let sumSquares = 0;
-      let peak = 0;
+    if (mono.length < windowSize) return [];
 
-      for (let j = 0; j < windowSize; j++) {
-        const sample = mono[i + j];
-        sumSquares += sample * sample;
-        peak = Math.max(peak, Math.abs(sample));
+    let currentSumSquares = 0;
+    // Deque stores indices of samples. We use shift() for O(1)-like removal from front
+    // since the deque size is bounded by windowSize (usually < 20k samples).
+    let deque: number[] = [];
+
+    // Initialize the first window
+    for (let i = 0; i < windowSize; i++) {
+      const val = mono[i];
+      currentSumSquares += val * val;
+
+      const absVal = Math.abs(val);
+      while (deque.length > 0 && Math.abs(mono[deque[deque.length - 1]]) <= absVal) {
+        deque.pop();
       }
+      deque.push(i);
+    }
 
-      const rms = Math.sqrt(sumSquares / windowSize);
-      const lufs = -0.691 + 10 * Math.log10(rms * rms + 1e-10);
+    // Process sliding windows
+    for (let i = 0; i < mono.length - windowSize; i += hopSize) {
+      // Numerical stability: currentSumSquares might drift slightly negative due to precision
+      const safeSumSquares = Math.max(0, currentSumSquares);
+      const meanSquare = safeSumSquares / windowSize;
+
+      // LUFS calculation: -0.691 + 10 * log10(meanSquare)
+      const lufs = -0.691 + 10 * Math.log10(meanSquare + 1e-10);
+
+      const peak = Math.abs(mono[deque[0]]);
       const peakdB = peak > 0 ? 20 * Math.log10(peak) : -100;
 
       loudnessPoints.push({
@@ -722,6 +742,39 @@ export class AudioAnalysisService {
         lufs,
         peak: peakdB,
       });
+
+      // Slide the window by hopSize
+      const nextI = i + hopSize;
+      if (nextI <= mono.length - windowSize) {
+        const end = nextI + windowSize;
+        for (let k = i + windowSize; k < end; k++) {
+          const inVal = mono[k];
+          const outVal = mono[k - windowSize];
+
+          // Update Sum of Squares with drift protection
+          currentSumSquares += (inVal * inVal) - (outVal * outVal);
+
+          // Update Deque for Peak (Sliding Window Maximum)
+          const absInVal = Math.abs(inVal);
+          // Remove indices that are out of the window [k - windowSize + 1, k]
+          if (deque[0] <= k - windowSize) {
+            deque.shift();
+          }
+          while (deque.length > 0 && Math.abs(mono[deque[deque.length - 1]]) <= absInVal) {
+            deque.pop();
+          }
+          deque.push(k);
+        }
+
+        // Periodic recalc to prevent long-term numerical drift for extremely long files (> 1 hour)
+        if (nextI % (sampleRate * 60) === 0) {
+          let recalculatedSum = 0;
+          for (let j = nextI; j < end; j++) {
+            recalculatedSum += mono[j] * mono[j];
+          }
+          currentSumSquares = recalculatedSum;
+        }
+      }
     }
 
     return loudnessPoints;
