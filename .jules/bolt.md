@@ -13,3 +13,7 @@
 ## 2026-03-26 - In-Place Mid/Side Processing
 **Learning:** Even after optimizing the main mastering chain, secondary processing like Mid/Side was still performing redundant `Float32Array` allocations. For a 4-minute stereo track, this was an extra ~84MB of memory churn. Refactoring this to use local stack variables for the MS encode before overwriting the channel buffers in-place eliminates this overhead.
 **Action:** Always verify that every stage of a signal processing chain is optimized for buffer reuse, especially when dealing with multi-channel interdependency.
+
+## 2024-05-21 - Hub Synergy Analysis
+**Learning:** The Song Generator Pro Hub functions as an integrated AI-driven ecosystem. The `AudioAnalysisService` provides the critical bridge between generation (Multi-Model Ensemble) and refinement (Mastering). By analyzing the output of AI models, it generates `MasteringSuggestions` that drive the `AudioMasteringService`. The `MusicVault` provides persistent storage for these refined assets, while the `VoiceRecorder` and `BeatMaker` act as input capture/creation sources that feed into this same pipeline. Maintaining high performance in the analysis service is crucial as it blocks the transition from raw generation to a mastered, library-ready song.
+**Action:** Prioritize optimizations in the Analysis-to-Mastering pipeline to ensure a fluid user experience from creation to storage.

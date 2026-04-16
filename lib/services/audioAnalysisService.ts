@@ -694,6 +694,8 @@ export class AudioAnalysisService {
 
   /**
    * Calculate loudness over time.
+   * ⚡ Bolt Optimization: Uses a block-based approach to pre-calculate energy and peaks.
+   * Reduces the inner loop complexity from O(WindowSize) to O(WindowSize/HopSize).
    */
   private calculateLoudnessOverTime(
     mono: Float32Array,
@@ -703,19 +705,58 @@ export class AudioAnalysisService {
     const hopSize = Math.floor(sampleRate * 0.1);
     const loudnessPoints: LoudnessPoint[] = [];
 
-    for (let i = 0; i < mono.length - windowSize; i += hopSize) {
-      let sumSquares = 0;
-      let peak = 0;
+    if (mono.length < windowSize) return [];
 
-      for (let j = 0; j < windowSize; j++) {
-        const sample = mono[i + j];
-        sumSquares += sample * sample;
-        peak = Math.max(peak, Math.abs(sample));
+    // ⚡ Bolt: Pre-calculate energy and peaks for each hop-sized block
+    const numHops = Math.ceil(mono.length / hopSize);
+    const hopSumSq = new Float64Array(numHops);
+    const hopPeaks = new Float32Array(numHops);
+
+    for (let h = 0; h < numHops; h++) {
+      let sumSq = 0;
+      let peak = 0;
+      const start = h * hopSize;
+      const end = Math.min(start + hopSize, mono.length);
+
+      for (let j = start; j < end; j++) {
+        const val = mono[j];
+        sumSq += val * val;
+        const absVal = Math.abs(val);
+        if (absVal > peak) peak = absVal;
+      }
+      hopSumSq[h] = sumSq;
+      hopPeaks[h] = peak;
+    }
+
+    // Number of full hops that fit into a window
+    const hopsPerWindow = Math.floor(windowSize / hopSize);
+    const remainingSamples = windowSize % hopSize;
+
+    // Slide window using pre-calculated hop data
+    for (let i = 0, k = 0; i < mono.length - windowSize; i += hopSize, k++) {
+      let windowSumSq = 0;
+      let windowPeak = 0;
+
+      // Sum full hops
+      for (let j = 0; j < hopsPerWindow; j++) {
+        windowSumSq += hopSumSq[k + j];
+        if (hopPeaks[k + j] > windowPeak) windowPeak = hopPeaks[k + j];
       }
 
-      const rms = Math.sqrt(sumSquares / windowSize);
+      // Add remaining samples if windowSize is not a multiple of hopSize
+      if (remainingSamples > 0) {
+        const start = i + hopsPerWindow * hopSize;
+        for (let j = 0; j < remainingSamples; j++) {
+          const val = mono[start + j];
+          windowSumSq += val * val;
+          const absVal = Math.abs(val);
+          if (absVal > windowPeak) windowPeak = absVal;
+        }
+      }
+
+      const rms = Math.sqrt(windowSumSq / windowSize);
       const lufs = -0.691 + 10 * Math.log10(rms * rms + 1e-10);
-      const peakdB = peak > 0 ? 20 * Math.log10(peak) : -100;
+      const peakdB = windowPeak > 0 ? 20 * Math.log10(windowPeak) : -100;
 
       loudnessPoints.push({
         time: i / sampleRate,
