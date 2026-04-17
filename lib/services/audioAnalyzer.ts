@@ -372,14 +372,22 @@ export class AudioAnalyzer {
     // Apply Hann window
     const windowed = FastFFTEngine.applyHannWindow(paddedSamples);
 
-    // Perform FFT
-    const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
+    // Perform FFT in-place
+    // We need to convert windowed samples to a complex buffer [R, I, R, I...]
+    const complexBuffer = new Float32Array(fftSize * 2);
+    for (let i = 0; i < windowed.length; i++) {
+      complexBuffer[i * 2] = windowed[i];
+      complexBuffer[i * 2 + 1] = 0;
+    }
+
+    FastFFTEngine.cooleyTukeyFFT(complexBuffer);
 
     const magnitudes = new Float32Array(fftSize / 2);
+    const invFFTSize = 1.0 / fftSize;
     for (let i = 0; i < fftSize / 2; i++) {
-      const real = fftResult[i * 2];
-      const imag = fftResult[i * 2 + 1];
-      magnitudes[i] = Math.sqrt(real * real + imag * imag) / fftSize;
+      const real = complexBuffer[i * 2];
+      const imag = complexBuffer[i * 2 + 1];
+      magnitudes[i] = Math.sqrt(real * real + imag * imag) * invFFTSize;
     }
 
     return magnitudes;
