@@ -13,3 +13,7 @@
 ## 2026-03-26 - In-Place Mid/Side Processing
 **Learning:** Even after optimizing the main mastering chain, secondary processing like Mid/Side was still performing redundant `Float32Array` allocations. For a 4-minute stereo track, this was an extra ~84MB of memory churn. Refactoring this to use local stack variables for the MS encode before overwriting the channel buffers in-place eliminates this overhead.
 **Action:** Always verify that every stage of a signal processing chain is optimized for buffer reuse, especially when dealing with multi-channel interdependency.
+
+## 2026-04-18 - Zero-Allocation Iterative FFT
+**Learning:** Recursive FFT implementations in JS not only suffer from call stack overhead but also generate massive GC pressure by allocating new arrays at every level of the recursion (O(N log N) allocations). Switching to an iterative in-place Cooley-Tukey algorithm allows for O(1) extra memory usage. By providing an optional output buffer, we can eliminate allocations entirely during high-frequency operations like spectrogram generation.
+**Action:** Use iterative algorithms with pre-allocated result buffers for heavy mathematical processing to ensure smooth UI performance and minimal GC pauses.
