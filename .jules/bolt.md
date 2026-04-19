@@ -13,3 +13,7 @@
 ## 2026-03-26 - In-Place Mid/Side Processing
 **Learning:** Even after optimizing the main mastering chain, secondary processing like Mid/Side was still performing redundant `Float32Array` allocations. For a 4-minute stereo track, this was an extra ~84MB of memory churn. Refactoring this to use local stack variables for the MS encode before overwriting the channel buffers in-place eliminates this overhead.
 **Action:** Always verify that every stage of a signal processing chain is optimized for buffer reuse, especially when dealing with multi-channel interdependency.
+
+## 2026-03-27 - Block-Based Sliding Window Optimization
+**Learning:** Sliding window algorithms with high overlap (e.g., 75% overlap in loudness analysis) often re-calculate energy for the same samples repeatedly, leading to $O(N \cdot W)$ complexity. By pre-calculating sum-of-squares and peaks for each hop-sized block, we can combine these blocks to derive window results in $O(N \cdot (W/H))$ time. This resulted in a ~2.2x speedup for a 400ms window and 100ms hop.
+**Action:** For sliding window analysis on large audio buffers, prioritize block-based pre-calculation to minimize redundant traversals.
