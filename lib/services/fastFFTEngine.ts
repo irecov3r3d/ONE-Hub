@@ -7,6 +7,7 @@ export class FastFFTEngine {
   private audioContext: AudioContext;
   private static hannWindowCache: Map<number, Float32Array> = new Map();
   private static twiddleCache: Map<number, Float32Array> = new Map();
+  private static bitReverseCache: Map<number, Uint32Array> = new Map();
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
@@ -65,12 +66,16 @@ export class FastFFTEngine {
 
     // Use middle portion for analysis
     const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
-    const samples = channelData.subarray(startSample, startSample + fftSize);
+    const samples = channelData.subarray(Math.max(0, startSample), Math.min(channelData.length, startSample + fftSize));
+
+    // Pad with zeros if necessary to reach fftSize (must be power of 2)
+    const paddedSamples = new Float32Array(fftSize);
+    paddedSamples.set(samples);
 
     // Apply Hann window
-    const windowed = FastFFTEngine.applyHannWindow(samples);
+    const windowed = FastFFTEngine.applyHannWindow(paddedSamples);
 
-    // Perform FFT using Cooley-Tukey algorithm
+    // Perform FFT using iterative Cooley-Tukey algorithm
     const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
 
     // Convert to frequency bands
@@ -111,48 +116,66 @@ export class FastFFTEngine {
   }
 
   /**
-   * Cooley-Tukey FFT algorithm (O(n log n) instead of O(n²))
+   * Get pre-calculated bit-reversal indices for FFT size n.
    */
-  public static cooleyTukeyFFT(samples: Float32Array): Float32Array {
+  private static getBitReverseIndices(n: number): Uint32Array {
+    let indices = FastFFTEngine.bitReverseCache.get(n);
+    if (!indices) {
+      indices = new Uint32Array(n);
+      const logN = Math.log2(n);
+      for (let i = 0; i < n; i++) {
+        let j = 0;
+        for (let k = 0; k < logN; k++) {
+          if ((i >> k) & 1) {
+            j |= (1 << (logN - 1 - k));
+          }
+        }
+        indices[i] = j;
+      }
+      FastFFTEngine.bitReverseCache.set(n, indices);
+    }
+    return indices;
+  }
+
+  /**
+   * Cooley-Tukey FFT algorithm (O(n log n))
+   * ⚡ Bolt Optimization: Iterative, in-place implementation with zero-allocation path.
+   * Replaces recursive implementation to reduce memory overhead and GC pressure.
+   */
+  public static cooleyTukeyFFT(samples: Float32Array, output?: Float32Array): Float32Array {
     const n = samples.length;
+    const result = output || new Float32Array(n * 2);
 
-    if (n <= 1) {
-      const result = new Float32Array(n * 2);
-      result[0] = samples[0];
-      result[1] = 0;
-      return result;
+    // 1. Bit-reversal permutation
+    const indices = FastFFTEngine.getBitReverseIndices(n);
+    for (let i = 0; i < n; i++) {
+      result[i * 2] = samples[indices[i]];
+      result[i * 2 + 1] = 0;
     }
 
-    // Split into even and odd
-    const even = new Float32Array(n / 2);
-    const odd = new Float32Array(n / 2);
+    // 2. Iterative Cooley-Tukey
+    for (let s = 1; s <= Math.log2(n); s++) {
+      const m = Math.pow(2, s);
+      const m2 = m >> 1;
+      const twiddles = FastFFTEngine.getTwiddleFactors(m);
 
-    for (let i = 0; i < n / 2; i++) {
-      even[i] = samples[i * 2];
-      odd[i] = samples[i * 2 + 1];
-    }
+      for (let k = 0; k < n; k += m) {
+        for (let j = 0; j < m2; j++) {
+          const cos = twiddles[j * 2];
+          const sin = twiddles[j * 2 + 1];
 
-    // Recursive FFT
-    const fftEven = FastFFTEngine.cooleyTukeyFFT(even);
-    const fftOdd = FastFFTEngine.cooleyTukeyFFT(odd);
+          const tReal = cos * result[(k + j + m2) * 2] - sin * result[(k + j + m2) * 2 + 1];
+          const tImag = sin * result[(k + j + m2) * 2] + cos * result[(k + j + m2) * 2 + 1];
 
-    // Combine results
-    const result = new Float32Array(n * 2);
-    const factors = FastFFTEngine.getTwiddleFactors(n);
+          const uReal = result[(k + j) * 2];
+          const uImag = result[(k + j) * 2 + 1];
 
-    for (let k = 0; k < n / 2; k++) {
-      const cos = factors[k * 2];
-      const sin = factors[k * 2 + 1];
-      const tReal = cos * fftOdd[k * 2] - sin * fftOdd[k * 2 + 1];
-      const tImag = sin * fftOdd[k * 2] + cos * fftOdd[k * 2 + 1];
-
-      // k
-      result[k * 2] = fftEven[k * 2] + tReal;
-      result[k * 2 + 1] = fftEven[k * 2 + 1] + tImag;
-
-      // k + n/2
-      result[(k + n / 2) * 2] = fftEven[k * 2] - tReal;
-      result[(k + n / 2) * 2 + 1] = fftEven[k * 2 + 1] - tImag;
+          result[(k + j) * 2] = uReal + tReal;
+          result[(k + j) * 2 + 1] = uImag + tImag;
+          result[(k + j + m2) * 2] = uReal - tReal;
+          result[(k + j + m2) * 2 + 1] = uImag - tImag;
+        }
+      }
     }
 
     return result;
@@ -209,6 +232,8 @@ export class FastFFTEngine {
 
   /**
    * Calculate spectrogram (time-frequency representation)
+   * ⚡ Bolt Optimization: Removed arbitrary 200-frame limit and added async yielding.
+   * Uses reusable output buffer for FFTs to minimize GC pressure.
    */
   async calculateSpectrogram(
     audioBuffer: AudioBuffer,
@@ -234,17 +259,21 @@ export class FastFFTEngine {
     // Process audio in overlapping windows
     const numFrames = Math.floor((channelData.length - fftSize) / hopSize);
 
-    for (let frame = 0; frame < Math.min(numFrames, 200); frame++) {
+    // ⚡ Bolt: Reusable FFT buffer
+    const fftBuffer = new Float32Array(fftSize * 2);
+
+    for (let frame = 0; frame < numFrames; frame++) {
       const startSample = frame * hopSize;
       const samples = channelData.subarray(startSample, startSample + fftSize);
 
       const windowed = FastFFTEngine.applyHannWindow(samples);
-      const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
+      // ⚡ Bolt: Use in-place FFT with reusable buffer
+      FastFFTEngine.cooleyTukeyFFT(windowed, fftBuffer);
 
       const frameMagnitudes: number[] = [];
       for (let i = 0; i < fftSize / 2; i++) {
-        const real = fftResult[i * 2];
-        const imag = fftResult[i * 2 + 1];
+        const real = fftBuffer[i * 2];
+        const imag = fftBuffer[i * 2 + 1];
         const magnitude = Math.sqrt(real * real + imag * imag) / fftSize;
         const magnitudeDB = magnitude > 0 ? 20 * Math.log10(magnitude) : -100;
         frameMagnitudes.push(magnitudeDB);
@@ -252,6 +281,11 @@ export class FastFFTEngine {
 
       times.push((startSample / sampleRate));
       magnitudes.push(frameMagnitudes);
+
+      // ⚡ Bolt: Yield to main thread every 50 frames to keep UI responsive
+      if (frame % 50 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
     }
 
     return { times, frequencies, magnitudes };
