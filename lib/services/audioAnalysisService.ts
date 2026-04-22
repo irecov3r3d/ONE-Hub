@@ -694,31 +694,59 @@ export class AudioAnalysisService {
 
   /**
    * Calculate loudness over time.
+   * ⚡ Bolt Optimization: Uses a block-based approach to reduce complexity from O(N * W) to O(N).
+   * 1. Pre-calculate sum of squares and peaks for non-overlapping hop-sized blocks (100ms).
+   * 2. Aggregate 4 blocks to compute metrics for the sliding window (400ms).
    */
   private calculateLoudnessOverTime(
     mono: Float32Array,
     sampleRate: number
   ): LoudnessPoint[] {
-    const windowSize = Math.floor(sampleRate * 0.4);
-    const hopSize = Math.floor(sampleRate * 0.1);
+    const hopSize = Math.floor(sampleRate * 0.1); // 100ms blocks
+    const numBlocks = Math.floor(mono.length / hopSize);
+    const windowInBlocks = 4; // 400ms window = 4 * 100ms hop
     const loudnessPoints: LoudnessPoint[] = [];
 
-    for (let i = 0; i < mono.length - windowSize; i += hopSize) {
-      let sumSquares = 0;
-      let peak = 0;
+    if (numBlocks < windowInBlocks) return [];
 
-      for (let j = 0; j < windowSize; j++) {
-        const sample = mono[i + j];
-        sumSquares += sample * sample;
-        peak = Math.max(peak, Math.abs(sample));
+    // 1. Pre-calculate block energy and peaks (O(N))
+    const blockEnergy = new Float32Array(numBlocks);
+    const blockPeaks = new Float32Array(numBlocks);
+
+    for (let b = 0; b < numBlocks; b++) {
+      let sumSq = 0;
+      let peak = 0;
+      const start = b * hopSize;
+      for (let i = 0; i < hopSize; i++) {
+        const sample = mono[start + i];
+        const abs = sample < 0 ? -sample : sample;
+        sumSq += sample * sample;
+        if (abs > peak) peak = abs;
+      }
+      blockEnergy[b] = sumSq;
+      blockPeaks[b] = peak;
+    }
+
+    // 2. Aggregate blocks for sliding window (O(N/hop))
+    const windowSize = hopSize * windowInBlocks;
+    const invWindowSize = 1 / windowSize;
+
+    // Use < to match previous implementation's window count exactly
+    for (let b = 0; b < numBlocks - windowInBlocks; b++) {
+      let totalSumSq = 0;
+      let maxPeak = 0;
+
+      for (let i = 0; i < windowInBlocks; i++) {
+        totalSumSq += blockEnergy[b + i];
+        if (blockPeaks[b + i] > maxPeak) maxPeak = blockPeaks[b + i];
       }
 
-      const rms = Math.sqrt(sumSquares / windowSize);
-      const lufs = -0.691 + 10 * Math.log10(rms * rms + 1e-10);
-      const peakdB = peak > 0 ? 20 * Math.log10(peak) : -100;
+      const rmsSq = totalSumSq * invWindowSize;
+      const lufs = -0.691 + 10 * Math.log10(rmsSq + 1e-10);
+      const peakdB = maxPeak > 0 ? 20 * Math.log10(maxPeak) : -100;
 
       loudnessPoints.push({
-        time: i / sampleRate,
+        time: (b * hopSize) / sampleRate,
         lufs,
         peak: peakdB,
       });

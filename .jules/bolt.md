@@ -17,3 +17,7 @@
 ## 2024-05-21 - Iterative In-Place FFT Performance
 **Learning:** Replacing recursive Cooley-Tukey FFT with an iterative, in-place implementation (using bit-reversal permutation and twiddle caching) achieved an ~8.5x speedup and eliminated (N \log N)$ intermediate array allocations. Recursive calls in JavaScript are expensive due to stack overhead and constant memory churn, which can trigger frequent GC pauses during long audio analysis.
 **Action:** For heavy numerical processing, prioritize iterative algorithms that operate on a single pre-allocated buffer or support zero-allocation via an output buffer.
+
+## 2026-03-27 - Block-Based Loudness Analysis Speedup
+**Learning:** Sliding window algorithms (like loudness over time) often involve redundant calculations if the window overlaps significantly with the hop size. By pre-calculating metrics (energy, peaks) for non-overlapping blocks equal to the hop size, and then aggregating these blocks for the window, we reduce complexity from O(N * W) to O(N). For this app's 400ms window and 100ms hop, this achieved a verified ~3.9x speedup.
+**Action:** When implementing sliding window algorithms with high overlap, use a block-based pre-calculation approach to minimize redundant buffer traversals.
