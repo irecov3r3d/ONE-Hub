@@ -21,3 +21,7 @@
 ## 2026-03-27 - Block-Based Loudness Analysis Speedup
 **Learning:** Sliding window algorithms (like loudness over time) often involve redundant calculations if the window overlaps significantly with the hop size. By pre-calculating metrics (energy, peaks) for non-overlapping blocks equal to the hop size, and then aggregating these blocks for the window, we reduce complexity from O(N * W) to O(N). For this app's 400ms window and 100ms hop, this achieved a verified ~3.9x speedup.
 **Action:** When implementing sliding window algorithms with high overlap, use a block-based pre-calculation approach to minimize redundant buffer traversals.
+
+## 2026-04-23 - Block Statistics Consolidation
+**Learning:** Consolidating block-level metrics (sum-of-squares and peaks) into the primary audio buffer traversal (O(N)) allows multiple subsequent windowed analyses (loudness over time, silence detection, sectioning) to operate at O(N/hop) complexity. This eliminates multiple redundant O(N) traversals of large audio buffers.
+**Action:** When an analysis pipeline requires multiple sliding-window or block-based metrics, pre-calculate granular block stats in the first O(N) pass to minimize total compute time.
