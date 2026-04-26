@@ -21,3 +21,7 @@
 ## 2026-03-27 - Block-Based Loudness Analysis Speedup
 **Learning:** Sliding window algorithms (like loudness over time) often involve redundant calculations if the window overlaps significantly with the hop size. By pre-calculating metrics (energy, peaks) for non-overlapping blocks equal to the hop size, and then aggregating these blocks for the window, we reduce complexity from O(N * W) to O(N). For this app's 400ms window and 100ms hop, this achieved a verified ~3.9x speedup.
 **Action:** When implementing sliding window algorithms with high overlap, use a block-based pre-calculation approach to minimize redundant buffer traversals.
+
+## 2026-03-28 - Consolidating Block Stats into Primary Pass
+**Learning:** Even with block-based optimizations, performing separate passes to generate those blocks (for loudness, silence, etc.) still incurs O(N) overhead per pass. Moving block energy and peak calculation into the absolute first O(N) traversal (which already handles mono conversion and peak detection) reduces the total number of full-buffer scans from ~4 down to 1.
+**Action:** In multi-stage audio analysis, treat the first O(N) traversal as a "data provider" that pre-calculates all necessary block-level metrics for downstream O(N/hop) consumers.
