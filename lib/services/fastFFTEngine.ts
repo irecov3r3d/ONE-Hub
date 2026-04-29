@@ -72,11 +72,11 @@ export class FastFFTEngine {
     const paddedSamples = new Float32Array(fftSize);
     paddedSamples.set(samples);
 
-    // Apply Hann window
-    const windowed = FastFFTEngine.applyHannWindow(paddedSamples);
+    // ⚡ Bolt: Use Fused Windowing to avoid extra Float32Array allocation
+    const hannWindow = FastFFTEngine.getHannWindow(fftSize);
 
-    // Perform FFT using iterative Cooley-Tukey algorithm
-    const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
+    // Perform FFT using iterative Cooley-Tukey algorithm with fused windowing
+    const fftResult = FastFFTEngine.cooleyTukeyFFT(paddedSamples, undefined, hannWindow);
 
     // Convert to frequency bands
     const spectrum: FrequencyBand[] = [];
@@ -140,17 +140,30 @@ export class FastFFTEngine {
   /**
    * Cooley-Tukey FFT algorithm (O(n log n))
    * ⚡ Bolt Optimization: Iterative, in-place implementation with zero-allocation path.
+   * ⚡ Bolt: Supports 'Fused Windowing' via optional window parameter applied during bit-reversal.
    * Replaces recursive implementation to reduce memory overhead and GC pressure.
    */
-  public static cooleyTukeyFFT(samples: Float32Array, output?: Float32Array): Float32Array {
+  public static cooleyTukeyFFT(
+    samples: Float32Array,
+    output?: Float32Array,
+    window?: Float32Array
+  ): Float32Array {
     const n = samples.length;
     const result = output || new Float32Array(n * 2);
 
-    // 1. Bit-reversal permutation
+    // 1. Bit-reversal permutation (with Fused Windowing)
     const indices = FastFFTEngine.getBitReverseIndices(n);
-    for (let i = 0; i < n; i++) {
-      result[i * 2] = samples[indices[i]];
-      result[i * 2 + 1] = 0;
+    if (window) {
+      for (let i = 0; i < n; i++) {
+        const idx = indices[i];
+        result[i * 2] = samples[idx] * window[idx];
+        result[i * 2 + 1] = 0;
+      }
+    } else {
+      for (let i = 0; i < n; i++) {
+        result[i * 2] = samples[indices[i]];
+        result[i * 2 + 1] = 0;
+      }
     }
 
     // 2. Iterative Cooley-Tukey
@@ -182,13 +195,10 @@ export class FastFFTEngine {
   }
 
   /**
-   * Apply Hann window to reduce spectral leakage.
-   * ⚡ Bolt: Caches window coefficients to avoid redundant Math.cos calls.
+   * Get pre-calculated Hann window coefficients.
    */
-  public static applyHannWindow(samples: Float32Array): Float32Array {
-    const n = samples.length;
+  private static getHannWindow(n: number): Float32Array {
     let window = FastFFTEngine.hannWindowCache.get(n);
-
     if (!window) {
       window = new Float32Array(n);
       for (let i = 0; i < n; i++) {
@@ -196,7 +206,16 @@ export class FastFFTEngine {
       }
       FastFFTEngine.hannWindowCache.set(n, window);
     }
+    return window;
+  }
 
+  /**
+   * Apply Hann window to reduce spectral leakage.
+   * ⚡ Bolt: Caches window coefficients to avoid redundant Math.cos calls.
+   */
+  public static applyHannWindow(samples: Float32Array): Float32Array {
+    const n = samples.length;
+    const window = FastFFTEngine.getHannWindow(n);
     const windowed = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       windowed[i] = samples[i] * window[i];
@@ -261,14 +280,15 @@ export class FastFFTEngine {
 
     // ⚡ Bolt: Reusable FFT buffer
     const fftBuffer = new Float32Array(fftSize * 2);
+    const hannWindow = FastFFTEngine.getHannWindow(fftSize);
 
     for (let frame = 0; frame < numFrames; frame++) {
       const startSample = frame * hopSize;
       const samples = channelData.subarray(startSample, startSample + fftSize);
 
-      const windowed = FastFFTEngine.applyHannWindow(samples);
-      // ⚡ Bolt: Use in-place FFT with reusable buffer
-      FastFFTEngine.cooleyTukeyFFT(windowed, fftBuffer);
+      // ⚡ Bolt: Use Fused Windowing to eliminate per-frame 'windowed' allocation
+      // This saves numFrames * 4KB/8KB (depending on fftSize) of GC pressure.
+      FastFFTEngine.cooleyTukeyFFT(samples, fftBuffer, hannWindow);
 
       const frameMagnitudes: number[] = [];
       for (let i = 0; i < fftSize / 2; i++) {
