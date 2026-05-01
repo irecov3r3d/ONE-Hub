@@ -140,17 +140,29 @@ export class FastFFTEngine {
   /**
    * Cooley-Tukey FFT algorithm (O(n log n))
    * ⚡ Bolt Optimization: Iterative, in-place implementation with zero-allocation path.
-   * Replaces recursive implementation to reduce memory overhead and GC pressure.
+   * Fused Windowing: Optionally applies a window function during bit-reversal to eliminate a redundant pass.
    */
-  public static cooleyTukeyFFT(samples: Float32Array, output?: Float32Array): Float32Array {
+  public static cooleyTukeyFFT(
+    samples: Float32Array,
+    output?: Float32Array,
+    window?: Float32Array
+  ): Float32Array {
     const n = samples.length;
     const result = output || new Float32Array(n * 2);
 
-    // 1. Bit-reversal permutation
+    // 1. Bit-reversal permutation (Fused with Windowing if provided)
     const indices = FastFFTEngine.getBitReverseIndices(n);
-    for (let i = 0; i < n; i++) {
-      result[i * 2] = samples[indices[i]];
-      result[i * 2 + 1] = 0;
+    if (window) {
+      for (let i = 0; i < n; i++) {
+        const j = indices[i];
+        result[i * 2] = samples[j] * window[j];
+        result[i * 2 + 1] = 0;
+      }
+    } else {
+      for (let i = 0; i < n; i++) {
+        result[i * 2] = samples[indices[i]];
+        result[i * 2 + 1] = 0;
+      }
     }
 
     // 2. Iterative Cooley-Tukey
@@ -182,13 +194,11 @@ export class FastFFTEngine {
   }
 
   /**
-   * Apply Hann window to reduce spectral leakage.
+   * Get pre-calculated Hann window coefficients.
    * ⚡ Bolt: Caches window coefficients to avoid redundant Math.cos calls.
    */
-  public static applyHannWindow(samples: Float32Array): Float32Array {
-    const n = samples.length;
+  public static getHannWindow(n: number): Float32Array {
     let window = FastFFTEngine.hannWindowCache.get(n);
-
     if (!window) {
       window = new Float32Array(n);
       for (let i = 0; i < n; i++) {
@@ -196,7 +206,16 @@ export class FastFFTEngine {
       }
       FastFFTEngine.hannWindowCache.set(n, window);
     }
+    return window;
+  }
 
+  /**
+   * Apply Hann window to reduce spectral leakage.
+   * ⚡ Bolt: Uses cached coefficients.
+   */
+  public static applyHannWindow(samples: Float32Array): Float32Array {
+    const n = samples.length;
+    const window = FastFFTEngine.getHannWindow(n);
     const windowed = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       windowed[i] = samples[i] * window[i];
@@ -259,16 +278,17 @@ export class FastFFTEngine {
     // Process audio in overlapping windows
     const numFrames = Math.floor((channelData.length - fftSize) / hopSize);
 
-    // ⚡ Bolt: Reusable FFT buffer
+    // ⚡ Bolt: Reusable FFT buffer and Window coefficients
     const fftBuffer = new Float32Array(fftSize * 2);
+    const window = FastFFTEngine.getHannWindow(fftSize);
 
     for (let frame = 0; frame < numFrames; frame++) {
       const startSample = frame * hopSize;
       const samples = channelData.subarray(startSample, startSample + fftSize);
 
-      const windowed = FastFFTEngine.applyHannWindow(samples);
-      // ⚡ Bolt: Use in-place FFT with reusable buffer
-      FastFFTEngine.cooleyTukeyFFT(windowed, fftBuffer);
+      // ⚡ Bolt: Use fused windowing in the iterative FFT to eliminate
+      // the windowed buffer allocation and the separate O(N) windowing pass.
+      FastFFTEngine.cooleyTukeyFFT(samples, fftBuffer, window);
 
       const frameMagnitudes: number[] = [];
       for (let i = 0; i < fftSize / 2; i++) {
