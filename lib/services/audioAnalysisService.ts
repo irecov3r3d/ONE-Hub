@@ -1038,10 +1038,8 @@ export class AudioAnalysisService {
     const spectrogram = await this.fftEngine.calculateSpectrogram(audioBuffer, fftSize, hopSize);
     const spectrum = await this.fftEngine.performFFT(audioBuffer, fftSize);
 
-    const frequencyBins = spectrum.map((band, i) => ({
-      frequency: (i * sampleRate) / fftSize,
-      magnitude: band.magnitude,
-      phase: band.phase,
+    const frequencyBins = spectrum.map(band => ({
+      ...band,
       time: audioBuffer.duration / 2,
     }));
 

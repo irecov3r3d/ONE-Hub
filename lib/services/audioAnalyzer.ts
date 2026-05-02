@@ -369,11 +369,11 @@ export class AudioAnalyzer {
     const paddedSamples = new Float32Array(fftSize);
     paddedSamples.set(segment);
 
-    // Apply Hann window
-    const windowed = FastFFTEngine.applyHannWindow(paddedSamples);
+    // ⚡ Bolt: Use Fused Windowing in FFT to avoid extra allocation/pass
+    const window = FastFFTEngine.getHannWindow(fftSize);
 
     // Perform FFT
-    const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
+    const fftResult = FastFFTEngine.cooleyTukeyFFT(paddedSamples, undefined, window);
 
     const magnitudes = new Float32Array(fftSize / 2);
     for (let i = 0; i < fftSize / 2; i++) {

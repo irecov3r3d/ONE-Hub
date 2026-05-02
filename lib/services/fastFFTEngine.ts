@@ -72,15 +72,16 @@ export class FastFFTEngine {
     const paddedSamples = new Float32Array(fftSize);
     paddedSamples.set(samples);
 
-    // Apply Hann window
-    const windowed = FastFFTEngine.applyHannWindow(paddedSamples);
+    // ⚡ Bolt: Use Fused Windowing in FFT to avoid extra allocation/pass
+    const window = FastFFTEngine.getHannWindow(fftSize);
 
     // Perform FFT using iterative Cooley-Tukey algorithm
-    const fftResult = FastFFTEngine.cooleyTukeyFFT(windowed);
+    const fftResult = FastFFTEngine.cooleyTukeyFFT(paddedSamples, undefined, window);
 
-    // Convert to frequency bands
+    // Convert to frequency bands (first n/2 bins for real signals)
     const spectrum: FrequencyBand[] = [];
-    for (let i = 0; i < fftResult.length / 2; i++) {
+    const numBins = fftSize / 2;
+    for (let i = 0; i < numBins; i++) {
       const real = fftResult[i * 2];
       const imag = fftResult[i * 2 + 1];
       const magnitude = Math.sqrt(real * real + imag * imag) / fftSize;
@@ -141,16 +142,29 @@ export class FastFFTEngine {
    * Cooley-Tukey FFT algorithm (O(n log n))
    * ⚡ Bolt Optimization: Iterative, in-place implementation with zero-allocation path.
    * Replaces recursive implementation to reduce memory overhead and GC pressure.
+   * ⚡ Bolt: Supports Fused Windowing via optional `window` parameter.
    */
-  public static cooleyTukeyFFT(samples: Float32Array, output?: Float32Array): Float32Array {
+  public static cooleyTukeyFFT(
+    samples: Float32Array,
+    output?: Float32Array,
+    window?: Float32Array
+  ): Float32Array {
     const n = samples.length;
     const result = output || new Float32Array(n * 2);
 
-    // 1. Bit-reversal permutation
+    // 1. Bit-reversal permutation (Fused windowing if window provided)
     const indices = FastFFTEngine.getBitReverseIndices(n);
-    for (let i = 0; i < n; i++) {
-      result[i * 2] = samples[indices[i]];
-      result[i * 2 + 1] = 0;
+    if (window) {
+      for (let i = 0; i < n; i++) {
+        const idx = indices[i];
+        result[i * 2] = samples[idx] * window[idx];
+        result[i * 2 + 1] = 0;
+      }
+    } else {
+      for (let i = 0; i < n; i++) {
+        result[i * 2] = samples[indices[i]];
+        result[i * 2 + 1] = 0;
+      }
     }
 
     // 2. Iterative Cooley-Tukey
@@ -182,13 +196,11 @@ export class FastFFTEngine {
   }
 
   /**
-   * Apply Hann window to reduce spectral leakage.
+   * Get pre-calculated Hann window coefficients for size n.
    * ⚡ Bolt: Caches window coefficients to avoid redundant Math.cos calls.
    */
-  public static applyHannWindow(samples: Float32Array): Float32Array {
-    const n = samples.length;
+  public static getHannWindow(n: number): Float32Array {
     let window = FastFFTEngine.hannWindowCache.get(n);
-
     if (!window) {
       window = new Float32Array(n);
       for (let i = 0; i < n; i++) {
@@ -196,7 +208,16 @@ export class FastFFTEngine {
       }
       FastFFTEngine.hannWindowCache.set(n, window);
     }
+    return window;
+  }
 
+  /**
+   * Apply Hann window to reduce spectral leakage.
+   * ⚡ Bolt: Deprecated in favor of Fused Windowing in cooleyTukeyFFT.
+   */
+  public static applyHannWindow(samples: Float32Array): Float32Array {
+    const n = samples.length;
+    const window = FastFFTEngine.getHannWindow(n);
     const windowed = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       windowed[i] = samples[i] * window[i];
@@ -262,13 +283,15 @@ export class FastFFTEngine {
     // ⚡ Bolt: Reusable FFT buffer
     const fftBuffer = new Float32Array(fftSize * 2);
 
+    // ⚡ Bolt: Pre-get window for fused FFT
+    const window = FastFFTEngine.getHannWindow(fftSize);
+
     for (let frame = 0; frame < numFrames; frame++) {
       const startSample = frame * hopSize;
       const samples = channelData.subarray(startSample, startSample + fftSize);
 
-      const windowed = FastFFTEngine.applyHannWindow(samples);
-      // ⚡ Bolt: Use in-place FFT with reusable buffer
-      FastFFTEngine.cooleyTukeyFFT(windowed, fftBuffer);
+      // ⚡ Bolt: Use in-place FFT with reusable buffer AND fused windowing
+      FastFFTEngine.cooleyTukeyFFT(samples, fftBuffer, window);
 
       const frameMagnitudes: number[] = [];
       for (let i = 0; i < fftSize / 2; i++) {
