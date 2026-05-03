@@ -21,3 +21,7 @@
 ## 2026-03-27 - Block-Based Loudness Analysis Speedup
 **Learning:** Sliding window algorithms (like loudness over time) often involve redundant calculations if the window overlaps significantly with the hop size. By pre-calculating metrics (energy, peaks) for non-overlapping blocks equal to the hop size, and then aggregating these blocks for the window, we reduce complexity from O(N * W) to O(N). For this app's 400ms window and 100ms hop, this achieved a verified ~3.9x speedup.
 **Action:** When implementing sliding window algorithms with high overlap, use a block-based pre-calculation approach to minimize redundant buffer traversals.
+
+## 2026-05-03 - Fused FFT Windowing
+**Learning:** Applying a windowing function (like Hann) separately before an FFT involves an extra O(N) traversal and usually a temporary buffer allocation. By fusing the window application into the bit-reversal/permutation phase of the FFT, we eliminate the extra pass and allocation entirely.
+**Action:** In signal processing pipelines, look for opportunities to fuse element-wise operations (windowing, gain, etc.) into the first or last pass of complex transformations like FFT to reduce memory bandwidth and GC pressure.
