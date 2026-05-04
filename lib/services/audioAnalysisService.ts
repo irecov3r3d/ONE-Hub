@@ -48,6 +48,10 @@ interface BasicAudioStats {
   clippedSamples: number;
   totalSamples: number;
   length: number;
+  blockEnergy512: Float32Array;
+  blockPeaks512: Float32Array;
+  blockEnergy100ms: Float32Array;
+  blockPeaks100ms: Float32Array;
 }
 
 /**
@@ -77,8 +81,8 @@ export class AudioAnalysisService {
     const fileInfo = await this.extractFileInfo(file, audioBuffer);
     const channelData = this.extractChannelData(audioBuffer);
 
-    // ⚡ Bolt: Single-pass stats collection (includes mono conversion)
-    const stats = this.analyzeBasicStats(channelData);
+    // ⚡ Bolt: Single-pass stats collection (includes mono conversion and block metrics)
+    const stats = this.analyzeBasicStats(channelData, audioBuffer.sampleRate);
 
     // ⚡ Bolt: Consolidate 8192-point FFT (used by Frequency and Harmonic analysis)
     const spectrum8192 = await this.fftEngine.performFFT(audioBuffer, 8192);
@@ -93,7 +97,7 @@ export class AudioAnalysisService {
       spectral,
       quality,
     ] = await Promise.all([
-      this.analyzeTemporalFeatures(audioBuffer, stats.mono),
+      this.analyzeTemporalFeatures(audioBuffer, stats),
       this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192),
       this.analyzeLoudness(audioBuffer, stats),
       this.analyzeMusicalFeatures(audioBuffer, stats),
@@ -126,13 +130,25 @@ export class AudioAnalysisService {
 
   /**
    * ⚡ Bolt Optimization: Consolidates mono conversion, peak detection, DC offset,
-   * clipping detection, and energy accumulation (L/R and Mid/Side) into a single O(N) loop.
+   * clipping detection, energy accumulation (L/R and Mid/Side), AND block-level
+   * metrics (512-sample and 100ms) into a single O(N) loop.
    */
-  private analyzeBasicStats(channelData: Float32Array[]): BasicAudioStats {
+  private analyzeBasicStats(channelData: Float32Array[], sampleRate: number): BasicAudioStats {
     const length = channelData[0].length;
     const numChannels = channelData.length;
     const mono = new Float32Array(length);
     const hasRight = numChannels > 1;
+
+    // Block statistics setup
+    const hop512 = 512;
+    const numBlocks512 = Math.floor(length / hop512);
+    const blockEnergy512 = new Float32Array(numBlocks512);
+    const blockPeaks512 = new Float32Array(numBlocks512);
+
+    const hop100ms = Math.floor(sampleRate * 0.1);
+    const numBlocks100ms = Math.floor(length / hop100ms);
+    const blockEnergy100ms = new Float32Array(numBlocks100ms);
+    const blockPeaks100ms = new Float32Array(numBlocks100ms);
 
     let peakL = 0;
     let peakR = 0;
@@ -148,6 +164,15 @@ export class AudioAnalysisService {
     let clippedSamples = 0;
     const clippingThreshold = 0.99;
 
+    let curEnergy512 = 0;
+    let curPeak512 = 0;
+    let curEnergy100ms = 0;
+    let curPeak100ms = 0;
+    let count512 = 0;
+    let count100ms = 0;
+    let idx512 = 0;
+    let idx100ms = 0;
+
     const left = channelData[0];
     const right = hasRight ? channelData[1] : left;
 
@@ -158,6 +183,32 @@ export class AudioAnalysisService {
       // Mono conversion
       const sMono = hasRight ? (sL + sR) / 2 : sL;
       mono[i] = sMono;
+      const absMono = Math.abs(sMono);
+
+      // Block statistics accumulation
+      curEnergy512 += sMono * sMono;
+      if (absMono > curPeak512) curPeak512 = absMono;
+      count512++;
+      if (count512 === hop512 && idx512 < numBlocks512) {
+        blockEnergy512[idx512] = curEnergy512;
+        blockPeaks512[idx512] = curPeak512;
+        idx512++;
+        count512 = 0;
+        curEnergy512 = 0;
+        curPeak512 = 0;
+      }
+
+      curEnergy100ms += sMono * sMono;
+      if (absMono > curPeak100ms) curPeak100ms = absMono;
+      count100ms++;
+      if (count100ms === hop100ms && idx100ms < numBlocks100ms) {
+        blockEnergy100ms[idx100ms] = curEnergy100ms;
+        blockPeaks100ms[idx100ms] = curPeak100ms;
+        idx100ms++;
+        count100ms = 0;
+        curEnergy100ms = 0;
+        curPeak100ms = 0;
+      }
 
       // Peak detection
       const absL = Math.abs(sL);
@@ -209,7 +260,11 @@ export class AudioAnalysisService {
       rmsSide: hasRight ? safeLog10(Math.sqrt(sumSqSide / length)) : -100,
       length,
       clippedSamples,
-      totalSamples: length * numChannels
+      totalSamples: length * numChannels,
+      blockEnergy512,
+      blockPeaks512,
+      blockEnergy100ms,
+      blockPeaks100ms,
     };
   }
 
@@ -248,16 +303,16 @@ export class AudioAnalysisService {
    */
   private async analyzeTemporalFeatures(
     audioBuffer: AudioBuffer,
-    mono: Float32Array
+    stats: BasicAudioStats
   ): Promise<TemporalAnalysis> {
-    // ⚡ Bolt: Consolidate energy envelope calculation
+    // ⚡ Bolt Optimization: Uses pre-calculated block energy to derive envelope in O(N/hop)
     const hopSize = 512;
-    const envelope = this.calculateEnergyEnvelope(mono, hopSize);
+    const envelope = this.calculateEnergyEnvelopeFromBlocks(stats.blockEnergy512, hopSize);
 
     const bpmData = this.detectBPM(envelope, audioBuffer.sampleRate, hopSize);
-    const beats = this.detectBeats(mono, audioBuffer.sampleRate, bpmData.bpm);
+    const beats = this.detectBeats(stats.mono, audioBuffer.sampleRate, bpmData.bpm);
     const onsets = this.detectOnsets(envelope, audioBuffer.sampleRate, hopSize);
-    const sections = this.detectSections(audioBuffer, mono);
+    const sections = this.detectSections(audioBuffer, stats);
 
     return {
       bpm: bpmData.bpm,
@@ -309,20 +364,14 @@ export class AudioAnalysisService {
 
   /**
    * Calculate energy envelope for beat detection.
+   * ⚡ Bolt Optimization: Uses pre-calculated block energy (O(N/hop)).
    */
-  private calculateEnergyEnvelope(samples: Float32Array, hopSize: number): Float32Array {
-    const numFrames = Math.floor(samples.length / hopSize);
-    const envelope = new Float32Array(numFrames);
+  private calculateEnergyEnvelopeFromBlocks(blockEnergy: Float32Array, hopSize: number): Float32Array {
+    const envelope = new Float32Array(blockEnergy.length);
+    const invHop = 1 / hopSize;
 
-    for (let i = 0; i < numFrames; i++) {
-      let energy = 0;
-      for (let j = 0; j < hopSize; j++) {
-        const idx = i * hopSize + j;
-        if (idx < samples.length) {
-          energy += samples[idx] * samples[idx];
-        }
-      }
-      envelope[i] = Math.sqrt(energy / hopSize);
+    for (let i = 0; i < blockEnergy.length; i++) {
+      envelope[i] = Math.sqrt(blockEnergy[i] * invHop);
     }
 
     return envelope;
@@ -365,28 +414,34 @@ export class AudioAnalysisService {
 
   /**
    * Detect musical sections.
+   * ⚡ Bolt Optimization: Uses pre-calculated 100ms block energy (O(N/hop)).
    */
-  private detectSections(audioBuffer: AudioBuffer, mono: Float32Array): AudioSection[] {
+  private detectSections(audioBuffer: AudioBuffer, stats: BasicAudioStats): AudioSection[] {
     const duration = audioBuffer.duration;
-    const sectionLength = 8;
+    const sampleRate = audioBuffer.sampleRate;
+    const hopSize = Math.floor(sampleRate * 0.1); // 100ms blocks
+    const sectionLength = 8; // 8 seconds per section
+    const blocksPerSection = Math.floor((sectionLength * sampleRate) / hopSize);
     const sections: AudioSection[] = [];
 
-    for (let time = 0; time < duration; time += sectionLength) {
-      const endTime = Math.min(time + sectionLength, duration);
-      const startSample = Math.floor(time * audioBuffer.sampleRate);
-      const endSample = Math.floor(endTime * audioBuffer.sampleRate);
+    for (let b = 0; b < stats.blockEnergy100ms.length; b += blocksPerSection) {
+      const startTime = (b * hopSize) / sampleRate;
+      const endTime = Math.min(startTime + sectionLength, duration);
 
-      let energy = 0;
-      for (let i = startSample; i < endSample && i < mono.length; i++) {
-        energy += mono[i] * mono[i];
+      let sectionEnergy = 0;
+      let count = 0;
+      for (let i = 0; i < blocksPerSection && (b + i) < stats.blockEnergy100ms.length; i++) {
+        sectionEnergy += stats.blockEnergy100ms[b + i];
+        count += hopSize;
       }
-      energy = Math.sqrt(energy / (endSample - startSample + 1e-10));
+
+      const rms = Math.sqrt(sectionEnergy / (count + 1e-10));
 
       sections.push({
-        startTime: time,
+        startTime,
         endTime,
         type: 'unknown',
-        energy: Math.min(energy * 10, 1),
+        energy: Math.min(rms * 10, 1),
         avgLoudness: -23,
       });
     }
@@ -645,7 +700,7 @@ export class AudioAnalysisService {
     const dynamicRange = this.calculateDynamicRange(stats.mono);
 
     const crestFactor = stats.peakL - stats.rmsL;
-    const loudnessOverTime = this.calculateLoudnessOverTime(stats.mono, sampleRate);
+    const loudnessOverTime = this.calculateLoudnessOverTime(stats, sampleRate);
 
     return {
       integratedLUFS,
@@ -694,45 +749,26 @@ export class AudioAnalysisService {
 
   /**
    * Calculate loudness over time.
-   * ⚡ Bolt Optimization: Uses a block-based approach to reduce complexity from O(N * W) to O(N).
-   * 1. Pre-calculate sum of squares and peaks for non-overlapping hop-sized blocks (100ms).
-   * 2. Aggregate 4 blocks to compute metrics for the sliding window (400ms).
+   * ⚡ Bolt Optimization: Uses pre-calculated 100ms block statistics (O(N/hop)).
    */
   private calculateLoudnessOverTime(
-    mono: Float32Array,
+    stats: BasicAudioStats,
     sampleRate: number
   ): LoudnessPoint[] {
     const hopSize = Math.floor(sampleRate * 0.1); // 100ms blocks
-    const numBlocks = Math.floor(mono.length / hopSize);
     const windowInBlocks = 4; // 400ms window = 4 * 100ms hop
     const loudnessPoints: LoudnessPoint[] = [];
 
+    const { blockEnergy100ms: blockEnergy, blockPeaks100ms: blockPeaks } = stats;
+    const numBlocks = blockEnergy.length;
+
     if (numBlocks < windowInBlocks) return [];
 
-    // 1. Pre-calculate block energy and peaks (O(N))
-    const blockEnergy = new Float32Array(numBlocks);
-    const blockPeaks = new Float32Array(numBlocks);
-
-    for (let b = 0; b < numBlocks; b++) {
-      let sumSq = 0;
-      let peak = 0;
-      const start = b * hopSize;
-      for (let i = 0; i < hopSize; i++) {
-        const sample = mono[start + i];
-        const abs = sample < 0 ? -sample : sample;
-        sumSq += sample * sample;
-        if (abs > peak) peak = abs;
-      }
-      blockEnergy[b] = sumSq;
-      blockPeaks[b] = peak;
-    }
-
-    // 2. Aggregate blocks for sliding window (O(N/hop))
     const windowSize = hopSize * windowInBlocks;
     const invWindowSize = 1 / windowSize;
 
-    // Use < to match previous implementation's window count exactly
-    for (let b = 0; b < numBlocks - windowInBlocks; b++) {
+    // Aggregate blocks for sliding window (O(N/hop))
+    for (let b = 0; b <= numBlocks - windowInBlocks; b++) {
       let totalSumSq = 0;
       let maxPeak = 0;
 
@@ -1067,7 +1103,7 @@ export class AudioAnalysisService {
     const noiseFloor = this.calculateNoiseFloor(stats.mono);
     const snr = stats.rmsL - noiseFloor;
 
-    const silentSections = this.detectSilence(stats.mono, audioBuffer.sampleRate);
+    const silentSections = this.detectSilence(stats, audioBuffer.sampleRate);
     const clippingPercentage = (stats.clippedSamples / (stats.totalSamples || 1)) * 100;
 
     const issues = this.detectAudioIssues(
@@ -1121,33 +1157,34 @@ export class AudioAnalysisService {
   /**
    * Detect silent sections.
    */
-  private detectSilence(samples: Float32Array, sampleRate: number): any[] {
+  /**
+   * Detect silent sections.
+   * ⚡ Bolt Optimization: Uses pre-calculated 100ms block energy (O(N/hop)).
+   */
+  private detectSilence(stats: BasicAudioStats, sampleRate: number): any[] {
     const threshold = -60;
     const minDuration = 0.5;
     const silentSections: any[] = [];
 
+    const hopSize = Math.floor(sampleRate * 0.1);
+    const { blockEnergy100ms } = stats;
+
     let inSilence = false;
     let silenceStart = 0;
-    const hopSize = Math.floor(sampleRate * 0.1);
 
-    for (let i = 0; i < samples.length; i += hopSize) {
-      let sumSq = 0;
-      const actualHop = Math.min(hopSize, samples.length - i);
-      for (let j = 0; j < actualHop; j++) {
-        sumSq += samples[i + j] * samples[i + j];
-      }
-      const rms = Math.sqrt(sumSq / (actualHop + 1e-10));
+    for (let b = 0; b < blockEnergy100ms.length; b++) {
+      const rms = Math.sqrt(blockEnergy100ms[b] / hopSize);
       const level = rms > 0 ? 20 * Math.log10(rms) : -100;
 
       if (level < threshold && !inSilence) {
         inSilence = true;
-        silenceStart = i / sampleRate;
+        silenceStart = (b * hopSize) / sampleRate;
       } else if (level >= threshold && inSilence) {
-        const duration = i / sampleRate - silenceStart;
+        const duration = (b * hopSize) / sampleRate - silenceStart;
         if (duration >= minDuration) {
           silentSections.push({
             startTime: silenceStart,
-            endTime: i / sampleRate,
+            endTime: (b * hopSize) / sampleRate,
             duration,
             threshold,
           });
