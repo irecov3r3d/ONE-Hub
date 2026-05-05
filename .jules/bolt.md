@@ -25,3 +25,7 @@
 ## 2026-05-03 - Fused FFT Windowing
 **Learning:** Applying a windowing function (like Hann) separately before an FFT involves an extra O(N) traversal and usually a temporary buffer allocation. By fusing the window application into the bit-reversal/permutation phase of the FFT, we eliminate the extra pass and allocation entirely.
 **Action:** In signal processing pipelines, look for opportunities to fuse element-wise operations (windowing, gain, etc.) into the first or last pass of complex transformations like FFT to reduce memory bandwidth and GC pressure.
+
+## 2026-05-05 - Block-Based Audio Analysis Performance
+**Learning:** Consolidating block-level metrics (sum-of-squares and peaks) into the primary audio buffer traversal ($O(N)$) allows multiple windowed analyses (loudness, silence, sections) to run in $O(N/hop)$. This significantly reduces total compute time and cache misses by avoiding redundant full-buffer scans.
+**Action:** When implementing multiple analysis metrics on the same buffer, pre-calculate the lowest common denominator (blocks) in the first pass.
