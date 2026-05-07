@@ -21,3 +21,10 @@ The **Song Generator Pro Hub** is an integrated ecosystem designed to move from 
 
 ## Synergistic Optimizations (Bolt's Role)
 Bolt's optimizations across the `FastFFTEngine`, `AudioAnalysisService`, and `AudioMasteringService` ensure that this pipeline remains responsive. By minimizing memory allocations (in-place processing) and reducing computational complexity (block-based analysis), Bolt allows for rapid iteration between generation and refinement.
+
+## Non-Core Projects (Relocation Strategy)
+To maintain the focus of the Song Generator Pro Hub, projects that do not contribute to the music production workflow are designated for relocation to separate repositories. This includes:
+- **Browser Extensions**: Chrome, Firefox, and Gemini sidebar extensions.
+- **System Utilities**: Window splitters and multi-tab automation tools.
+- **Standalone Apps**: Foodmarket MVP, LemmeGitDat, and OS customization projects.
+- **Research Tools**: Demographic impact reviews and GPT Studio development environments.
