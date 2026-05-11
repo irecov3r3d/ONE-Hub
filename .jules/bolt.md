@@ -25,3 +25,7 @@
 ## 2026-05-03 - Fused FFT Windowing
 **Learning:** Applying a windowing function (like Hann) separately before an FFT involves an extra O(N) traversal and usually a temporary buffer allocation. By fusing the window application into the bit-reversal/permutation phase of the FFT, we eliminate the extra pass and allocation entirely.
 **Action:** In signal processing pipelines, look for opportunities to fuse element-wise operations (windowing, gain, etc.) into the first or last pass of complex transformations like FFT to reduce memory bandwidth and GC pressure.
+
+## 2026-05-20 - Optimized WAV Export Performance
+**Learning:** Using `DataView.setInt16` in a tight loop for interleaving and converting audio data to 16-bit PCM is extremely slow due to the overhead of function calls and property lookups. By using an `Int16Array` to interleave the data and then performing a bulk copy to the final `ArrayBuffer` using `Uint8Array.set`, we can significantly reduce the export time.
+**Action:** For bulk binary data operations, prefer TypedArray views and bulk `.set()` methods over `DataView` methods in loops.

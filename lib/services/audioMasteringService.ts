@@ -700,19 +700,28 @@ export class AudioMasteringService {
     view.setUint32(offset, dataSize, true); offset += 4;
 
     // Write audio data
+    // ⚡ Bolt Optimization: Use Int16Array for faster interleaving and bulk copy.
+    // This reduces DataView overhead and eliminates thousands of method calls.
+    const totalSamples = length * numberOfChannels;
+    const interleaved = new Int16Array(totalSamples);
+
     const channels: Float32Array[] = [];
     for (let i = 0; i < numberOfChannels; i++) {
       channels.push(audioBuffer.getChannelData(i));
     }
 
+    let p = 0;
     for (let i = 0; i < length; i++) {
       for (let ch = 0; ch < numberOfChannels; ch++) {
-        const sample = Math.max(-1, Math.min(1, channels[ch][i]));
-        const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-        view.setInt16(offset, intSample, true);
-        offset += 2;
+        const sample = channels[ch][i];
+        // Fast clamping and 16-bit PCM conversion
+        const s = sample < -1 ? -1 : (sample > 1 ? 1 : sample);
+        interleaved[p++] = s < 0 ? s * 0x8000 : s * 0x7FFF;
       }
     }
+
+    // Bulk copy to the final ArrayBuffer starting after the 44-byte header
+    new Uint8Array(buffer, 44).set(new Uint8Array(interleaved.buffer));
 
     return new Blob([buffer], { type: 'audio/wav' });
   }
