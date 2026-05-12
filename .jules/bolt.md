@@ -25,3 +25,7 @@
 ## 2026-05-03 - Fused FFT Windowing
 **Learning:** Applying a windowing function (like Hann) separately before an FFT involves an extra O(N) traversal and usually a temporary buffer allocation. By fusing the window application into the bit-reversal/permutation phase of the FFT, we eliminate the extra pass and allocation entirely.
 **Action:** In signal processing pipelines, look for opportunities to fuse element-wise operations (windowing, gain, etc.) into the first or last pass of complex transformations like FFT to reduce memory bandwidth and GC pressure.
+
+## 2026-05-20 - Endian-Safe Bulk Audio Export
+**Learning:** While bulk copying `TypedArray` buffers (e.g., `Int16Array`) to an `ArrayBuffer` is significantly faster than individual `DataView.setInt16` calls, it is host-endian. Since the WAV standard requires Little Endian, raw byte copies will corrupt audio on Big Endian systems. Using a runtime endianness check allows for a fast-path direct view on Little Endian systems (99.9% of devices) while maintaining a safe `DataView` fallback.
+**Action:** When performing bulk memory operations for cross-platform file formats, always implement a runtime endianness check and provide an endian-safe fallback.

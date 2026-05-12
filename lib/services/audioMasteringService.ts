@@ -705,12 +705,30 @@ export class AudioMasteringService {
       channels.push(audioBuffer.getChannelData(i));
     }
 
-    for (let i = 0; i < length; i++) {
-      for (let ch = 0; ch < numberOfChannels; ch++) {
-        const sample = Math.max(-1, Math.min(1, channels[ch][i]));
-        const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-        view.setInt16(offset, intSample, true);
-        offset += 2;
+    // ⚡ Bolt Optimization: Detect endianness and use a direct Int16Array view if possible
+    // This eliminates the overhead of DataView.setInt16 (approx. 21M calls for 4min stereo)
+    // and avoids extra memory allocation by writing directly into the result buffer.
+    const isLittleEndian = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+
+    if (isLittleEndian) {
+      // Fast path: direct view of the ArrayBuffer for little-endian systems (99.9% of devices)
+      const int16View = new Int16Array(buffer, offset, length * numberOfChannels);
+      let sampleIdx = 0;
+      for (let i = 0; i < length; i++) {
+        for (let ch = 0; ch < numberOfChannels; ch++) {
+          const sample = Math.max(-1, Math.min(1, channels[ch][i]));
+          int16View[sampleIdx++] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+        }
+      }
+    } else {
+      // Fallback: Safe path for big-endian systems using DataView
+      for (let i = 0; i < length; i++) {
+        for (let ch = 0; ch < numberOfChannels; ch++) {
+          const sample = Math.max(-1, Math.min(1, channels[ch][i]));
+          const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+          view.setInt16(offset, intSample, true); // Still force Little Endian for WAV
+          offset += 2;
+        }
       }
     }
 
