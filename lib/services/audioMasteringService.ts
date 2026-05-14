@@ -705,12 +705,47 @@ export class AudioMasteringService {
       channels.push(audioBuffer.getChannelData(i));
     }
 
-    for (let i = 0; i < length; i++) {
-      for (let ch = 0; ch < numberOfChannels; ch++) {
-        const sample = Math.max(-1, Math.min(1, channels[ch][i]));
-        const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-        view.setInt16(offset, intSample, true);
-        offset += 2;
+    // ⚡ Bolt Optimization: Detect host endianness to use faster TypedArray writes
+    // Standard WAV PCM is Little Endian. If host is Little Endian, we can use Int16Array directly.
+    const isLittleEndian = (() => {
+      const buffer = new ArrayBuffer(2);
+      new DataView(buffer).setInt16(0, 256, true);
+      return new Int16Array(buffer)[0] === 256;
+    })();
+
+    if (isLittleEndian && numberOfChannels === 2) {
+      // Direct Int16Array write for stereo
+      const pcmData = new Int16Array(buffer, offset);
+      const left = channels[0];
+      const right = channels[1];
+      for (let i = 0; i < length; i++) {
+        const sL = left[i];
+        const sR = right[i];
+        const sampleL = sL > 1 ? 1 : (sL < -1 ? -1 : sL);
+        const sampleR = sR > 1 ? 1 : (sR < -1 ? -1 : sR);
+        pcmData[i * 2] = sampleL < 0 ? sampleL * 0x8000 : sampleL * 0x7FFF;
+        pcmData[i * 2 + 1] = sampleR < 0 ? sampleR * 0x8000 : sampleR * 0x7FFF;
+      }
+    } else if (isLittleEndian) {
+      // Direct Int16Array write for other channel counts
+      const pcmData = new Int16Array(buffer, offset);
+      let pcmOffset = 0;
+      for (let i = 0; i < length; i++) {
+        for (let ch = 0; ch < numberOfChannels; ch++) {
+          const s = channels[ch][i];
+          const sample = s > 1 ? 1 : (s < -1 ? -1 : s);
+          pcmData[pcmOffset++] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+        }
+      }
+    } else {
+      // Fallback for Big Endian hosts (rare for modern web/mobile)
+      for (let i = 0; i < length; i++) {
+        for (let ch = 0; ch < numberOfChannels; ch++) {
+          const sample = Math.max(-1, Math.min(1, channels[ch][i]));
+          const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+          view.setInt16(offset, intSample, true);
+          offset += 2;
+        }
       }
     }
 
