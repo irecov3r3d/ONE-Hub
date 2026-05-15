@@ -131,7 +131,12 @@ export class AudioAnalysisService {
   /**
    * ⚡ Bolt Optimization: Consolidates mono conversion, peak detection, DC offset,
    * clipping detection, and energy accumulation (L/R and Mid/Side) into a single O(N) loop.
-   * Also collects block-level energy and peaks for downstream analyses (Loudness, Silence, Sections).
+   *
+   * OPTIMIZATIONS:
+   * 1. Loop Unswitching: Separate paths for mono and stereo to eliminate branching.
+   * 2. Efficient Block Indexing: Uses local counters instead of Math.floor/modulo.
+   * 3. Mathematical Identities: Derives Mid/Side energy using Σ(L+R)^2 and Σ(L-R)^2
+   *    expansions, removing redundant calculations and square roots from the inner loop.
    */
   private analyzeBasicStats(channelData: Float32Array[], sampleRate: number): BasicAudioStats {
     const length = channelData[0].length;
@@ -140,8 +145,8 @@ export class AudioAnalysisService {
     const hasRight = numChannels > 1;
 
     // Block statistics setup
-    const hop100ms = Math.floor(sampleRate * 0.1);
-    const numBlocks100ms = Math.ceil(length / (hop100ms || 1));
+    const hop100ms = Math.floor(sampleRate * 0.1) || 1;
+    const numBlocks100ms = Math.ceil(length / hop100ms);
     const blockEnergy100ms = new Float32Array(numBlocks100ms);
     const blockPeaks100ms = new Float32Array(numBlocks100ms);
 
@@ -156,8 +161,6 @@ export class AudioAnalysisService {
     let sumR = 0;
     let sumSqL = 0;
     let sumSqR = 0;
-    let sumSqMid = 0;
-    let sumSqSide = 0;
     let absSumL = 0;
     let absSumR = 0;
     let sumLR = 0;
@@ -167,60 +170,87 @@ export class AudioAnalysisService {
     const left = channelData[0];
     const right = hasRight ? channelData[1] : left;
 
-    for (let i = 0; i < length; i++) {
-      const sL = left[i];
-      const sR = right[i];
+    // Local counters for block indexing to avoid Math.floor/modulo
+    let b100 = 0;
+    let c100 = 0;
+    let b512 = 0;
+    let c512 = 0;
 
-      // Mono conversion
-      const sMono = hasRight ? (sL + sR) / 2 : sL;
-      mono[i] = sMono;
+    if (hasRight) {
+      // ⚡ Optimized Stereo Path
+      for (let i = 0; i < length; i++) {
+        const sL = left[i];
+        const sR = right[i];
 
-      // Peak detection
-      const absL = Math.abs(sL);
-      const absR = Math.abs(sR);
-      const absMono = Math.abs(sMono);
-      if (absL > peakL) peakL = absL;
-      if (absR > peakR) peakR = absR;
+        // Peak & Clipping
+        const absL = sL < 0 ? -sL : sL;
+        const absR = sR < 0 ? -sR : sR;
+        if (absL > peakL) peakL = absL;
+        if (absR > peakR) peakR = absR;
+        if (absL >= clippingThreshold || absR >= clippingThreshold) clippedSamples++;
 
-      // Clipping count
-      if (absL >= clippingThreshold || (hasRight && absR >= clippingThreshold)) {
-        clippedSamples++;
-      }
-
-      // DC Offset accumulation
-      sumL += sL;
-      absSumL += absL;
-      if (hasRight) {
+        // DC & Power
+        sumL += sL;
         sumR += sR;
+        absSumL += absL;
         absSumR += absR;
-        sumLR += sL * sR;
-      }
-
-      // Energy accumulation for RMS (Mid/Side corrected per ITU-R BS.1770)
-      const sqMono = sMono * sMono;
-      sumSqL += sL * sL;
-      if (hasRight) {
+        sumSqL += sL * sL;
         sumSqR += sR * sR;
-        const mid = (sL + sR) / 2;
-        const side = (sL - sR) / 2;
-        sumSqMid += mid * mid;
-        sumSqSide += side * side;
-      } else {
-        sumSqMid += sqMono;
+        sumLR += sL * sR;
+
+        // Mono & Blocks
+        const sMono = (sL + sR) * 0.5;
+        const absMono = sMono < 0 ? -sMono : sMono;
+        const sqMono = sMono * sMono;
+        mono[i] = sMono;
+
+        blockEnergy100ms[b100] += sqMono;
+        if (absMono > blockPeaks100ms[b100]) blockPeaks100ms[b100] = absMono;
+        if (++c100 === hop100ms) { c100 = 0; b100++; }
+
+        blockEnergy512[b512] += sqMono;
+        if (absMono > blockPeaks512[b512]) blockPeaks512[b512] = absMono;
+        if (++c512 === hop512) { c512 = 0; b512++; }
       }
+    } else {
+      // ⚡ Optimized Mono Path
+      for (let i = 0; i < length; i++) {
+        const sL = left[i];
+        const absL = sL < 0 ? -sL : sL;
+        if (absL > peakL) peakL = absL;
+        if (absL >= clippingThreshold) clippedSamples++;
 
-      // 100ms Block Statistics
-      const blockIdx100 = Math.floor(i / hop100ms);
-      blockEnergy100ms[blockIdx100] += sqMono;
-      if (absMono > blockPeaks100ms[blockIdx100]) blockPeaks100ms[blockIdx100] = absMono;
+        sumL += sL;
+        absSumL += absL;
+        const sqL = sL * sL;
+        sumSqL += sqL;
+        mono[i] = sL;
 
-      // 512-sample Block Statistics
-      const blockIdx512 = i >> 9; // fast i / 512
-      blockEnergy512[blockIdx512] += sqMono;
-      if (absMono > blockPeaks512[blockIdx512]) blockPeaks512[blockIdx512] = absMono;
+        blockEnergy100ms[b100] += sqL;
+        if (absL > blockPeaks100ms[b100]) blockPeaks100ms[b100] = absL;
+        if (++c100 === hop100ms) { c100 = 0; b100++; }
+
+        blockEnergy512[b512] += sqL;
+        if (absL > blockPeaks512[b512]) blockPeaks512[b512] = absL;
+        if (++c512 === hop512) { c512 = 0; b512++; }
+      }
     }
 
     const safeLog10 = (val: number) => val > 0 ? 20 * Math.log10(val) : -100;
+
+    // ⚡ Bolt: Derive Mid/Side energy mathematically
+    // Σmid^2 = (ΣL^2 + ΣR^2 + 2ΣLR) / 4
+    // Σside^2 = (ΣL^2 + ΣR^2 - 2ΣLR) / 4
+    let rmsMid, rmsSide;
+    if (hasRight) {
+      const sumSqMid = (sumSqL + sumSqR + 2 * sumLR) * 0.25;
+      const sumSqSide = (sumSqL + sumSqR - 2 * sumLR) * 0.25;
+      rmsMid = safeLog10(Math.sqrt(Math.max(0, sumSqMid) / length));
+      rmsSide = safeLog10(Math.sqrt(Math.max(0, sumSqSide) / length));
+    } else {
+      rmsMid = safeLog10(Math.sqrt(sumSqL / length));
+      rmsSide = -100;
+    }
 
     return {
       mono,
@@ -235,8 +265,8 @@ export class AudioAnalysisService {
       sumSqR: hasRight ? sumSqR : sumSqL,
       rmsL: safeLog10(Math.sqrt(sumSqL / length)),
       rmsR: hasRight ? safeLog10(Math.sqrt(sumSqR / length)) : safeLog10(Math.sqrt(sumSqL / length)),
-      rmsMid: hasRight ? safeLog10(Math.sqrt(sumSqMid / length)) : safeLog10(Math.sqrt(sumSqL / length)),
-      rmsSide: hasRight ? safeLog10(Math.sqrt(sumSqSide / length)) : -100,
+      rmsMid,
+      rmsSide,
       length,
       clippedSamples,
       totalSamples: length * numChannels,

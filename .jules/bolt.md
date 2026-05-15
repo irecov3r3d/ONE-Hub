@@ -29,3 +29,7 @@
 ## 2026-05-04 - TypedArray vs DataView in High-Frequency Loops
 **Learning:** `DataView.setInt16` (and other `set` methods) are significantly slower than direct `TypedArray` access in high-frequency loops (e.g., millions of iterations). For WAV export, switching to a direct `Int16Array` view of the destination `ArrayBuffer` on little-endian hosts achieved a measurable ~1.6x speedup. Unrolling the loop for common channel counts (like stereo) provides additional performance gains by reducing indexing overhead and improving JIT optimization.
 **Action:** When performing millions of writes to an `ArrayBuffer`, check host endianness and prefer direct `TypedArray` views over `DataView` whenever possible.
+
+## 2026-05-05 - Mathematical Identities for Signal Energy
+**Learning:** Calculating Mid/Side energy in a stereo buffer usually requires an extra addition/subtraction and a multiplication per sample in the O(N) loop. However, by leveraging the mathematical expansion of power ($\sum(L+R)^2 = \sum L^2 + \sum R^2 + 2\sum LR$), we can derive the total Mid and Side energy after the main loop using already-accumulated L/R power and cross-correlation. This reduces the number of operations inside the tightest loop and improves CPU cache efficiency.
+**Action:** For global signal metrics, look for mathematical identities that allow deriving complex properties from basic accumulated sums, avoiding redundant operations in high-frequency loops.
