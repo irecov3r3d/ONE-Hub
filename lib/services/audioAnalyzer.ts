@@ -7,28 +7,33 @@ import { FastFFTEngine } from './fastFFTEngine';
 export class AudioAnalyzer {
   /**
    * Analyze audio file and return quality metrics
+   * ⚡ Bolt Optimization:
+   * 1. Consolidated mono conversion, peak, RMS, and stereo width into a single O(N) pass.
+   * 2. Pre-calculated windowed RMS values for Dynamic Range and Coherence to avoid redundant traversals.
+   * 3. Eliminated multiple Float32Array allocations for mono data.
    */
   static async analyzeAudio(audioUrl: string): Promise<QualityMetrics> {
     try {
       // Fetch audio file
       const audioBuffer = await this.loadAudioBuffer(audioUrl);
 
-      // Calculate various metrics
-      const spectralClarity = await this.calculateSpectralClarity(audioBuffer);
-      const dynamicRange = this.calculateDynamicRange(audioBuffer);
-      const stereoWidth = this.calculateStereoWidth(audioBuffer);
-      const frequencyBalance = this.calculateFrequencyBalance(audioBuffer);
-      const { rms, peak } = this.calculateLevels(audioBuffer);
-      const coherence = this.calculateCoherence(audioBuffer);
+      // ⚡ Bolt: Single-pass stats collection
+      const stats = this.analyzeBasicStats(audioBuffer);
+
+      // Calculate various metrics using pre-calculated stats
+      const spectralClarity = await this.calculateSpectralClarity(stats.mono, audioBuffer.sampleRate);
+      const dynamicRange = this.calculateDynamicRangeFromRMS(stats.windowRMS);
+      const frequencyBalance = this.calculateFrequencyBalance(stats.mono, audioBuffer.sampleRate);
+      const coherence = this.calculateCoherenceFromRMS(stats.windowRMS);
 
       // Calculate overall score
       const overallScore = this.calculateOverallScore({
         spectralClarity,
         dynamicRange,
-        stereoWidth,
+        stereoWidth: stats.stereoWidth,
         frequencyBalance,
-        rmsLevel: rms,
-        peakLevel: peak,
+        rmsLevel: stats.rms,
+        peakLevel: stats.peak,
         coherence,
         promptAdherence: 0.8, // This requires AI analysis
       });
@@ -36,10 +41,10 @@ export class AudioAnalyzer {
       return {
         spectralClarity,
         dynamicRange,
-        stereoWidth,
+        stereoWidth: stats.stereoWidth,
         frequencyBalance,
-        rmsLevel: rms,
-        peakLevel: peak,
+        rmsLevel: stats.rms,
+        peakLevel: stats.peak,
         coherence,
         promptAdherence: 0.8, // Placeholder - needs AI
         overallScore,
@@ -78,13 +83,10 @@ export class AudioAnalyzer {
   /**
    * Calculate spectral clarity (high frequency content quality)
    */
-  private static async calculateSpectralClarity(audioBuffer: AudioBuffer): Promise<number> {
-    const sampleRate = audioBuffer.sampleRate;
-    const channelData = audioBuffer.getChannelData(0);
-
+  private static async calculateSpectralClarity(mono: Float32Array, sampleRate: number): Promise<number> {
     // Perform FFT analysis on a segment from the middle of the track
     const fftSize = 2048;
-    const frequencyBins = this.performFFT(channelData, fftSize, sampleRate);
+    const frequencyBins = this.performFFT(mono, fftSize, sampleRate);
 
     // Analyze high frequency content (4kHz - 20kHz)
     const hfStart = Math.floor((4000 / sampleRate) * fftSize);
@@ -110,79 +112,30 @@ export class AudioAnalyzer {
   }
 
   /**
-   * Calculate dynamic range (difference between loudest and softest parts)
+   * Calculate dynamic range from pre-calculated windowed RMS values
    */
-  private static calculateDynamicRange(audioBuffer: AudioBuffer): number {
-    const channelData = this.getMonoData(audioBuffer);
-
-    // Split into windows and calculate RMS for each
-    const windowSize = audioBuffer.sampleRate; // 1 second windows
-    const rmsValues: number[] = [];
-
-    for (let i = 0; i < channelData.length; i += windowSize) {
-      // ⚡ Bolt: Use .subarray() to avoid expensive buffer copies
-      const window = channelData.subarray(i, i + windowSize);
-      const rms = this.calculateRMS(window);
-      if (rms > 0) rmsValues.push(rms);
-    }
-
+  private static calculateDynamicRangeFromRMS(rmsValues: number[]): number {
     if (rmsValues.length === 0) return 0;
 
-    // Sort RMS values
-    rmsValues.sort((a, b) => a - b);
+    // Work on a copy to avoid mutating the original array
+    const sortedRMS = [...rmsValues].sort((a, b) => a - b);
 
     // Dynamic range = difference between 95th and 5th percentile
-    const p5 = rmsValues[Math.floor(rmsValues.length * 0.05)];
-    const p95 = rmsValues[Math.floor(rmsValues.length * 0.95)];
+    const p5 = sortedRMS[Math.floor(sortedRMS.length * 0.05)];
+    const p95 = sortedRMS[Math.floor(sortedRMS.length * 0.95)];
 
-    const dynamicRange = 20 * Math.log10(p95 / p5);
+    if (p5 === 0) return 100; // Guard against division by zero
 
-    return dynamicRange;
-  }
-
-  /**
-   * Calculate stereo width (how wide the stereo image is)
-   */
-  private static calculateStereoWidth(audioBuffer: AudioBuffer): number {
-    if (audioBuffer.numberOfChannels < 2) return 0;
-
-    const left = audioBuffer.getChannelData(0);
-    const right = audioBuffer.getChannelData(1);
-
-    let correlation = 0;
-    let leftPower = 0;
-    let rightPower = 0;
-
-    for (let i = 0; i < left.length; i++) {
-      correlation += left[i] * right[i];
-      leftPower += left[i] * left[i];
-      rightPower += right[i] * right[i];
-    }
-
-    // Pearson correlation coefficient
-    const denominator = Math.sqrt(leftPower * rightPower);
-    if (denominator === 0) return 0;
-
-    correlation = correlation / denominator;
-
-    // Convert correlation to width
-    // -1 = fully out of phase (max width)
-    //  0 = uncorrelated (good width)
-    //  1 = mono (no width)
-    const width = (1 - correlation) / 2;
-
-    return width;
+    return 20 * Math.log10(p95 / p5);
   }
 
   /**
    * Calculate frequency balance (how balanced the spectrum is)
    */
-  private static calculateFrequencyBalance(audioBuffer: AudioBuffer): number {
-    const sampleRate = audioBuffer.sampleRate;
+  private static calculateFrequencyBalance(mono: Float32Array, sampleRate: number): number {
     const fftSize = 2048;
-    const channelData = audioBuffer.getChannelData(0);
 
-    const frequencyBins = this.performFFT(channelData, fftSize, sampleRate);
+    const frequencyBins = this.performFFT(mono, fftSize, sampleRate);
 
     // Divide spectrum into 3 bands: bass, mids, highs
     const bassEnd = Math.floor((250 / sampleRate) * fftSize);
@@ -225,62 +178,15 @@ export class AudioAnalyzer {
   }
 
   /**
-   * Calculate RMS and peak levels
-   * ⚡ Bolt: Consolidated Peak and RMS detection into a single O(N) loop.
+   * Calculate coherence from pre-calculated windowed RMS values
    */
-  private static calculateLevels(audioBuffer: AudioBuffer): { rms: number; peak: number } {
-    const channelData = audioBuffer.getChannelData(0);
-    const length = channelData.length;
-
-    let sumSquares = 0;
-    let peak = 0;
-
-    for (let i = 0; i < length; i++) {
-      const sample = channelData[i];
-      const abs = sample < 0 ? -sample : sample;
-
-      // Peak detection
-      if (abs > peak) peak = abs;
-
-      // RMS accumulation
-      sumSquares += sample * sample;
-    }
-
-    const rms = Math.sqrt(sumSquares / length);
-
-    // Convert to dB
-    const rmsDb = 20 * Math.log10(rms + 1e-10);
-    const peakDb = 20 * Math.log10(peak + 1e-10);
-
-    // LUFS estimation (simplified) per ITU-R BS.1770
-    const lufs = -0.691 + rmsDb;
-
-    return {
-      rms: lufs,
-      peak: peakDb,
-    };
-  }
-
-  /**
-   * Calculate coherence (how consistent the audio quality is)
-   */
-  private static calculateCoherence(audioBuffer: AudioBuffer): number {
-    const channelData = this.getMonoData(audioBuffer);
-    const windowSize = audioBuffer.sampleRate; // 1 second windows
-
-    const rmsValues: number[] = [];
-
-    for (let i = 0; i < channelData.length; i += windowSize) {
-      // ⚡ Bolt: Use .subarray() to avoid expensive buffer copies
-      const window = channelData.subarray(i, i + windowSize);
-      const rms = this.calculateRMS(window);
-      rmsValues.push(rms);
-    }
-
+  private static calculateCoherenceFromRMS(rmsValues: number[]): number {
     if (rmsValues.length < 2) return 1;
 
     // Calculate standard deviation
     const mean = rmsValues.reduce((a, b) => a + b, 0) / rmsValues.length;
+    if (mean === 0) return 0;
+
     const variance = rmsValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / rmsValues.length;
     const stdDev = Math.sqrt(variance);
 
@@ -288,9 +194,7 @@ export class AudioAnalyzer {
     const cv = stdDev / mean;
 
     // Convert to 0-1 score (less variation = more coherent)
-    const coherence = 1 - Math.min(1, cv);
-
-    return coherence;
+    return 1 - Math.min(1, cv);
   }
 
   /**
@@ -327,32 +231,82 @@ export class AudioAnalyzer {
   }
 
   /**
-   * Helper: Get mono data from audio buffer
+   * ⚡ Bolt Optimization: Consolidated Statistics Collection
+   * Performs mono conversion, peak detection, RMS accumulation, stereo correlation,
+   * and windowed energy collection in a single O(N) pass.
    */
-  private static getMonoData(audioBuffer: AudioBuffer): Float32Array {
-    if (audioBuffer.numberOfChannels === 1) {
-      return audioBuffer.getChannelData(0);
-    }
-    const left = audioBuffer.getChannelData(0);
-    const right = audioBuffer.getChannelData(1);
-    const mono = new Float32Array(left.length);
-    for (let i = 0; i < left.length; i++) {
-      mono[i] = (left[i] + right[i]) / 2;
-    }
-    return mono;
-  }
+  private static analyzeBasicStats(audioBuffer: AudioBuffer) {
+    const numChannels = audioBuffer.numberOfChannels;
+    const length = audioBuffer.length;
+    const sampleRate = audioBuffer.sampleRate;
+    const mono = new Float32Array(length);
 
-  /**
-   * Helper: Calculate RMS of audio samples
-   */
-  private static calculateRMS(samples: Float32Array): number {
-    let sum = 0;
-    const len = samples.length;
-    for (let i = 0; i < len; i++) {
-      const sample = samples[i];
-      sum += sample * sample;
+    const left = audioBuffer.getChannelData(0);
+    const right = numChannels > 1 ? audioBuffer.getChannelData(1) : left;
+
+    let totalSumSq = 0;
+    let maxPeak = 0;
+    let correlation = 0;
+    let leftPower = 0;
+    let rightPower = 0;
+
+    const windowSize = sampleRate; // 1 second windows
+    const windowRMS: number[] = [];
+    let currentWindowSumSq = 0;
+    let windowCount = 0;
+
+    for (let i = 0; i < length; i++) {
+      const sL = left[i];
+      const sR = right[i];
+
+      // Mono conversion
+      const sMono = numChannels > 1 ? (sL + sR) / 2 : sL;
+      mono[i] = sMono;
+
+      // Peak & RMS (using mono for consistency)
+      const absMono = Math.abs(sMono);
+      if (absMono > maxPeak) maxPeak = absMono;
+      const sqMono = sMono * sMono;
+      totalSumSq += sqMono;
+
+      // Stereo Width (Correlation)
+      if (numChannels > 1) {
+        correlation += sL * sR;
+        leftPower += sL * sL;
+        rightPower += sR * sR;
+      }
+
+      // Windowed RMS for Dynamic Range/Coherence
+      currentWindowSumSq += sqMono;
+      windowCount++;
+      if (windowCount === windowSize || i === length - 1) {
+        windowRMS.push(Math.sqrt(currentWindowSumSq / windowCount));
+        currentWindowSumSq = 0;
+        windowCount = 0;
+      }
     }
-    return Math.sqrt(sum / len);
+
+    const rms = Math.sqrt(totalSumSq / length);
+    const rmsDb = 20 * Math.log10(rms + 1e-10);
+    const peakDb = 20 * Math.log10(maxPeak + 1e-10);
+    const lufs = -0.691 + rmsDb;
+
+    let stereoWidth = 0;
+    if (numChannels > 1) {
+      const denominator = Math.sqrt(leftPower * rightPower);
+      if (denominator > 0) {
+        const corr = correlation / denominator;
+        stereoWidth = (1 - corr) / 2;
+      }
+    }
+
+    return {
+      mono,
+      rms: lufs,
+      peak: peakDb,
+      stereoWidth,
+      windowRMS
+    };
   }
 
   /**
