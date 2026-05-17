@@ -29,3 +29,7 @@
 ## 2026-05-04 - TypedArray vs DataView in High-Frequency Loops
 **Learning:** `DataView.setInt16` (and other `set` methods) are significantly slower than direct `TypedArray` access in high-frequency loops (e.g., millions of iterations). For WAV export, switching to a direct `Int16Array` view of the destination `ArrayBuffer` on little-endian hosts achieved a measurable ~1.6x speedup. Unrolling the loop for common channel counts (like stereo) provides additional performance gains by reducing indexing overhead and improving JIT optimization.
 **Action:** When performing millions of writes to an `ArrayBuffer`, check host endianness and prefer direct `TypedArray` views over `DataView` whenever possible.
+
+## 2026-05-05 - Audio Analysis Loop Optimization
+**Learning:** High-frequency audio processing loops (millions of iterations) benefit significantly from loop unswitching (separating mono/stereo paths) and mathematical identities. Global Mid/Side energy can be derived from $\sum L^2$, $\sum R^2$, and $\sum LR$, avoiding per-sample division and squaring. Replacing `Math.floor` with local counters for block indexing further reduces CPU cycles.
+**Action:** Use loop unswitching and mathematical identities to minimize operations in high-frequency signal processing loops.

@@ -140,8 +140,8 @@ export class AudioAnalysisService {
     const hasRight = numChannels > 1;
 
     // Block statistics setup
-    const hop100ms = Math.floor(sampleRate * 0.1);
-    const numBlocks100ms = Math.ceil(length / (hop100ms || 1));
+    const hop100ms = Math.floor(sampleRate * 0.1) || 1;
+    const numBlocks100ms = Math.ceil(length / hop100ms);
     const blockEnergy100ms = new Float32Array(numBlocks100ms);
     const blockPeaks100ms = new Float32Array(numBlocks100ms);
 
@@ -156,8 +156,6 @@ export class AudioAnalysisService {
     let sumR = 0;
     let sumSqL = 0;
     let sumSqR = 0;
-    let sumSqMid = 0;
-    let sumSqSide = 0;
     let absSumL = 0;
     let absSumR = 0;
     let sumLR = 0;
@@ -167,57 +165,90 @@ export class AudioAnalysisService {
     const left = channelData[0];
     const right = hasRight ? channelData[1] : left;
 
-    for (let i = 0; i < length; i++) {
-      const sL = left[i];
-      const sR = right[i];
+    // Local counters for block indexing (⚡ Bolt optimization: avoids Math.floor/division)
+    let blockIdx100 = 0;
+    let count100 = 0;
+    let blockIdx512 = 0;
+    let count512 = 0;
 
-      // Mono conversion
-      const sMono = hasRight ? (sL + sR) / 2 : sL;
-      mono[i] = sMono;
+    if (hasRight) {
+      // ⚡ Bolt: Optimized Stereo Path (Loop Unswitching)
+      for (let i = 0; i < length; i++) {
+        const sL = left[i];
+        const sR = right[i];
 
-      // Peak detection
-      const absL = Math.abs(sL);
-      const absR = Math.abs(sR);
-      const absMono = Math.abs(sMono);
-      if (absL > peakL) peakL = absL;
-      if (absR > peakR) peakR = absR;
+        // Mono conversion
+        const sMono = (sL + sR) * 0.5;
+        mono[i] = sMono;
 
-      // Clipping count
-      if (absL >= clippingThreshold || (hasRight && absR >= clippingThreshold)) {
-        clippedSamples++;
-      }
+        // Peak & Clipping
+        const absL = Math.abs(sL);
+        const absR = Math.abs(sR);
+        const absMono = Math.abs(sMono);
+        if (absL > peakL) peakL = absL;
+        if (absR > peakR) peakR = absR;
+        if (absL >= clippingThreshold || absR >= clippingThreshold) clippedSamples++;
 
-      // DC Offset accumulation
-      sumL += sL;
-      absSumL += absL;
-      if (hasRight) {
+        // Global stats accumulation
+        sumL += sL;
         sumR += sR;
+        absSumL += absL;
         absSumR += absR;
-        sumLR += sL * sR;
-      }
-
-      // Energy accumulation for RMS (Mid/Side corrected per ITU-R BS.1770)
-      const sqMono = sMono * sMono;
-      sumSqL += sL * sL;
-      if (hasRight) {
+        sumSqL += sL * sL;
         sumSqR += sR * sR;
-        const mid = (sL + sR) / 2;
-        const side = (sL - sR) / 2;
-        sumSqMid += mid * mid;
-        sumSqSide += side * side;
-      } else {
-        sumSqMid += sqMono;
+        sumLR += sL * sR;
+
+        // Block stats (⚡ Bolt: using local counters)
+        const sqMono = sMono * sMono;
+        blockEnergy100ms[blockIdx100] += sqMono;
+        if (absMono > blockPeaks100ms[blockIdx100]) blockPeaks100ms[blockIdx100] = absMono;
+        if (++count100 === hop100ms) { count100 = 0; blockIdx100++; }
+
+        blockEnergy512[blockIdx512] += sqMono;
+        if (absMono > blockPeaks512[blockIdx512]) blockPeaks512[blockIdx512] = absMono;
+        if (++count512 === hop512) { count512 = 0; blockIdx512++; }
       }
+    } else {
+      // ⚡ Bolt: Optimized Mono Path (Loop Unswitching)
+      for (let i = 0; i < length; i++) {
+        const sL = left[i];
+        mono[i] = sL;
 
-      // 100ms Block Statistics
-      const blockIdx100 = Math.floor(i / hop100ms);
-      blockEnergy100ms[blockIdx100] += sqMono;
-      if (absMono > blockPeaks100ms[blockIdx100]) blockPeaks100ms[blockIdx100] = absMono;
+        const absL = Math.abs(sL);
+        if (absL > peakL) peakL = absL;
+        if (absL >= clippingThreshold) clippedSamples++;
 
-      // 512-sample Block Statistics
-      const blockIdx512 = i >> 9; // fast i / 512
-      blockEnergy512[blockIdx512] += sqMono;
-      if (absMono > blockPeaks512[blockIdx512]) blockPeaks512[blockIdx512] = absMono;
+        sumL += sL;
+        absSumL += absL;
+        const sqL = sL * sL;
+        sumSqL += sqL;
+
+        blockEnergy100ms[blockIdx100] += sqL;
+        if (absL > blockPeaks100ms[blockIdx100]) blockPeaks100ms[blockIdx100] = absL;
+        if (++count100 === hop100ms) { count100 = 0; blockIdx100++; }
+
+        blockEnergy512[blockIdx512] += sqL;
+        if (absL > blockPeaks512[blockIdx512]) blockPeaks512[blockIdx512] = absL;
+        if (++count512 === hop512) { count512 = 0; blockIdx512++; }
+      }
+      peakR = peakL;
+      sumR = sumL;
+      absSumR = absSumL;
+      sumSqR = sumSqL;
+    }
+
+    // ⚡ Bolt: Mid/Side energy using mathematical identities
+    // sumSqMid = 0.25 * (sumSqL + sumSqR + 2 * sumLR)
+    // sumSqSide = 0.25 * (sumSqL + sumSqR - 2 * sumLR)
+    let sumSqMid, sumSqSide;
+    if (hasRight) {
+      const common = sumSqL + sumSqR;
+      const correlation2 = 2 * sumLR;
+      sumSqMid = 0.25 * (common + correlation2);
+      sumSqSide = 0.25 * (common - correlation2);
+    } else {
+      sumSqMid = sumSqL;
+      sumSqSide = 0;
     }
 
     const safeLog10 = (val: number) => val > 0 ? 20 * Math.log10(val) : -100;
