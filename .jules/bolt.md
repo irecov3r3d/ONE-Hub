@@ -29,3 +29,11 @@
 ## 2026-05-04 - TypedArray vs DataView in High-Frequency Loops
 **Learning:** `DataView.setInt16` (and other `set` methods) are significantly slower than direct `TypedArray` access in high-frequency loops (e.g., millions of iterations). For WAV export, switching to a direct `Int16Array` view of the destination `ArrayBuffer` on little-endian hosts achieved a measurable ~1.6x speedup. Unrolling the loop for common channel counts (like stereo) provides additional performance gains by reducing indexing overhead and improving JIT optimization.
 **Action:** When performing millions of writes to an `ArrayBuffer`, check host endianness and prefer direct `TypedArray` views over `DataView` whenever possible.
+
+## 2026-05-05 - Consolidated Spectral Linearization
+**Learning:** Frequency analysis methods (Centroid, Rolloff, Flatness, Bands) often perform independent decibel-to-linear conversions. For an 8192-point FFT, this results in over 40,000 redundant `Math.pow(10, mag / 20)` calls. Pre-calculating a single `linearMagnitudes` array once per analysis pass eliminates this bottleneck.
+**Action:** Always linearize spectral data once before passing it to multiple spectral feature extraction functions.
+
+## 2026-05-05 - Deferred Pitch-to-Note Conversion
+**Learning:** Converting every local spectral maximum to a musical note (via `Math.log2`) is expensive and often unnecessary. Deferring this conversion until after selecting the top N (e.g., 10) dominant frequencies reduces the number of log calls by 95% or more.
+**Action:** Only perform expensive coordinate or scale transformations on finalized result sets, not on raw candidate data.
