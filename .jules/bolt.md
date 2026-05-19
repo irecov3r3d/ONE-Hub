@@ -29,3 +29,7 @@
 ## 2026-05-04 - TypedArray vs DataView in High-Frequency Loops
 **Learning:** `DataView.setInt16` (and other `set` methods) are significantly slower than direct `TypedArray` access in high-frequency loops (e.g., millions of iterations). For WAV export, switching to a direct `Int16Array` view of the destination `ArrayBuffer` on little-endian hosts achieved a measurable ~1.6x speedup. Unrolling the loop for common channel counts (like stereo) provides additional performance gains by reducing indexing overhead and improving JIT optimization.
 **Action:** When performing millions of writes to an `ArrayBuffer`, check host endianness and prefer direct `TypedArray` views over `DataView` whenever possible.
+
+## 2024-05-22 - Shared Spectral Data Optimization
+**Learning:** Multiple spectral analysis stages (Frequency Bands, Centroid, Rolloff, Flatness, Key Detection, Pitch Classes) often perform redundant decibel-to-linear conversions. By pre-calculating linear magnitudes once and sharing them across all downstream spectral methods, we eliminate tens of thousands of redundant `Math.pow` calls per analysis.
+**Action:** When an expensive transformation (like dB to linear) is required by multiple independent analysis modules, lift the transformation to a shared provider stage to maximize reuse.

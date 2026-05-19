@@ -21,3 +21,8 @@ The **Song Generator Pro Hub** is an integrated ecosystem designed to move from 
 
 ## Synergistic Optimizations (Bolt's Role)
 Bolt's optimizations across the `FastFFTEngine`, `AudioAnalysisService`, and `AudioMasteringService` ensure that this pipeline remains responsive. By minimizing memory allocations (in-place processing) and reducing computational complexity (block-based analysis), Bolt allows for rapid iteration between generation and refinement.
+
+Specifically, the current hub synergy is enhanced by:
+- **Consolidated Analysis**: `AudioAnalysisService` collects all basic stats in a single pass, which feeds into both the `AudioMasteringService` for initial normalization and the `VideoSplitter` for waveform visualization.
+- **Spectral Data Reuse**: High-resolution FFT data (8192-point) is calculated once and shared across frequency analysis, harmonic detection, and key identification, eliminating redundant transformations.
+- **In-Place Processing**: Every stage of the refinement pipeline operates on shared buffers where possible, minimizing memory churn during the transition from generation to mastering.
