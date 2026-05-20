@@ -130,8 +130,10 @@ export class AudioAnalysisService {
 
   /**
    * ⚡ Bolt Optimization: Consolidates mono conversion, peak detection, DC offset,
-   * clipping detection, and energy accumulation (L/R and Mid/Side) into a single O(N) loop.
-   * Also collects block-level energy and peaks for downstream analyses (Loudness, Silence, Sections).
+   * clipping detection, and energy accumulation into a single O(N) loop.
+   * 1. Loop unswitching for mono and stereo paths to reduce branching.
+   * 2. Global Mid/Side energy identities derived from L/R correlation.
+   * 3. Local counters for block indexing to avoid expensive division/floor.
    */
   private analyzeBasicStats(channelData: Float32Array[], sampleRate: number): BasicAudioStats {
     const length = channelData[0].length;
@@ -140,8 +142,8 @@ export class AudioAnalysisService {
     const hasRight = numChannels > 1;
 
     // Block statistics setup
-    const hop100ms = Math.floor(sampleRate * 0.1);
-    const numBlocks100ms = Math.ceil(length / (hop100ms || 1));
+    const hop100ms = Math.floor(sampleRate * 0.1) || 1;
+    const numBlocks100ms = Math.ceil(length / hop100ms);
     const blockEnergy100ms = new Float32Array(numBlocks100ms);
     const blockPeaks100ms = new Float32Array(numBlocks100ms);
 
@@ -156,8 +158,6 @@ export class AudioAnalysisService {
     let sumR = 0;
     let sumSqL = 0;
     let sumSqR = 0;
-    let sumSqMid = 0;
-    let sumSqSide = 0;
     let absSumL = 0;
     let absSumR = 0;
     let sumLR = 0;
@@ -165,77 +165,116 @@ export class AudioAnalysisService {
     const clippingThreshold = 0.99;
 
     const left = channelData[0];
-    const right = hasRight ? channelData[1] : left;
 
-    for (let i = 0; i < length; i++) {
-      const sL = left[i];
-      const sR = right[i];
+    // Local counters for block indexing
+    let blockIdx100 = 0;
+    let blockCounter100 = 0;
+    let blockIdx512 = 0;
+    let blockCounter512 = 0;
 
-      // Mono conversion
-      const sMono = hasRight ? (sL + sR) / 2 : sL;
-      mono[i] = sMono;
+    if (hasRight) {
+      const right = channelData[1];
+      for (let i = 0; i < length; i++) {
+        const sL = left[i];
+        const sR = right[i];
 
-      // Peak detection
-      const absL = Math.abs(sL);
-      const absR = Math.abs(sR);
-      const absMono = Math.abs(sMono);
-      if (absL > peakL) peakL = absL;
-      if (absR > peakR) peakR = absR;
+        // Mono conversion
+        const sMono = (sL + sR) * 0.5;
+        mono[i] = sMono;
 
-      // Clipping count
-      if (absL >= clippingThreshold || (hasRight && absR >= clippingThreshold)) {
-        clippedSamples++;
-      }
+        // Peak detection
+        const absL = sL < 0 ? -sL : sL;
+        const absR = sR < 0 ? -sR : sR;
+        const absMono = sMono < 0 ? -sMono : sMono;
+        if (absL > peakL) peakL = absL;
+        if (absR > peakR) peakR = absR;
 
-      // DC Offset accumulation
-      sumL += sL;
-      absSumL += absL;
-      if (hasRight) {
+        // Clipping count
+        if (absL >= clippingThreshold || absR >= clippingThreshold) {
+          clippedSamples++;
+        }
+
+        // Stats accumulation
+        sumL += sL;
         sumR += sR;
+        absSumL += absL;
         absSumR += absR;
-        sumLR += sL * sR;
-      }
-
-      // Energy accumulation for RMS (Mid/Side corrected per ITU-R BS.1770)
-      const sqMono = sMono * sMono;
-      sumSqL += sL * sL;
-      if (hasRight) {
+        sumSqL += sL * sL;
         sumSqR += sR * sR;
-        const mid = (sL + sR) / 2;
-        const side = (sL - sR) / 2;
-        sumSqMid += mid * mid;
-        sumSqSide += side * side;
-      } else {
-        sumSqMid += sqMono;
+        sumLR += sL * sR;
+
+        // Block Statistics (using counters)
+        const sqMono = sMono * sMono;
+        blockEnergy100ms[blockIdx100] += sqMono;
+        if (absMono > blockPeaks100ms[blockIdx100]) blockPeaks100ms[blockIdx100] = absMono;
+        if (++blockCounter100 === hop100ms) {
+          blockCounter100 = 0;
+          blockIdx100++;
+        }
+
+        blockEnergy512[blockIdx512] += sqMono;
+        if (absMono > blockPeaks512[blockIdx512]) blockPeaks512[blockIdx512] = absMono;
+        if (++blockCounter512 === hop512) {
+          blockCounter512 = 0;
+          blockIdx512++;
+        }
       }
+    } else {
+      for (let i = 0; i < length; i++) {
+        const sL = left[i];
+        mono[i] = sL;
 
-      // 100ms Block Statistics
-      const blockIdx100 = Math.floor(i / hop100ms);
-      blockEnergy100ms[blockIdx100] += sqMono;
-      if (absMono > blockPeaks100ms[blockIdx100]) blockPeaks100ms[blockIdx100] = absMono;
+        const absL = sL < 0 ? -sL : sL;
+        if (absL > peakL) peakL = absL;
+        if (absL >= clippingThreshold) clippedSamples++;
 
-      // 512-sample Block Statistics
-      const blockIdx512 = i >> 9; // fast i / 512
-      blockEnergy512[blockIdx512] += sqMono;
-      if (absMono > blockPeaks512[blockIdx512]) blockPeaks512[blockIdx512] = absMono;
+        sumL += sL;
+        absSumL += absL;
+        sumSqL += sL * sL;
+
+        const sqL = sL * sL;
+        blockEnergy100ms[blockIdx100] += sqL;
+        if (absL > blockPeaks100ms[blockIdx100]) blockPeaks100ms[blockIdx100] = absL;
+        if (++blockCounter100 === hop100ms) {
+          blockCounter100 = 0;
+          blockIdx100++;
+        }
+
+        blockEnergy512[blockIdx512] += sqL;
+        if (absL > blockPeaks512[blockIdx512]) blockPeaks512[blockIdx512] = absL;
+        if (++blockCounter512 === hop512) {
+          blockCounter512 = 0;
+          blockIdx512++;
+        }
+      }
+      peakR = peakL;
+      sumR = sumL;
+      absSumR = absSumL;
+      sumSqR = sumSqL;
     }
+
+    // ⚡ Bolt: Global Mid/Side energy identities derived after traversal
+    // sumSqMid = 0.25 * (sumSqL + sumSqR + 2 * sumLR)
+    // sumSqSide = 0.25 * (sumSqL + sumSqR - 2 * sumLR)
+    const sumSqMid = hasRight ? 0.25 * (sumSqL + sumSqR + 2 * sumLR) : sumSqL;
+    const sumSqSide = hasRight ? 0.25 * (sumSqL + sumSqR - 2 * sumLR) : 0;
 
     const safeLog10 = (val: number) => val > 0 ? 20 * Math.log10(val) : -100;
 
     return {
       mono,
       peakL: safeLog10(peakL),
-      peakR: hasRight ? safeLog10(peakR) : safeLog10(peakL),
+      peakR: safeLog10(peakR),
       dcOffsetL: sumL / length,
-      dcOffsetR: hasRight ? sumR / length : sumL / length,
+      dcOffsetR: sumR / length,
       absSumL,
-      absSumR: hasRight ? absSumR : absSumL,
+      absSumR,
       sumLR,
       sumSqL,
-      sumSqR: hasRight ? sumSqR : sumSqL,
+      sumSqR,
       rmsL: safeLog10(Math.sqrt(sumSqL / length)),
-      rmsR: hasRight ? safeLog10(Math.sqrt(sumSqR / length)) : safeLog10(Math.sqrt(sumSqL / length)),
-      rmsMid: hasRight ? safeLog10(Math.sqrt(sumSqMid / length)) : safeLog10(Math.sqrt(sumSqL / length)),
+      rmsR: safeLog10(Math.sqrt(sumSqR / length)),
+      rmsMid: safeLog10(Math.sqrt(sumSqMid / length)),
       rmsSide: hasRight ? safeLog10(Math.sqrt(sumSqSide / length)) : -100,
       length,
       clippedSamples,
@@ -449,6 +488,8 @@ export class AudioAnalysisService {
 
   /**
    * Frequency analysis: spectrum, frequency bands, spectral features.
+   * ⚡ Bolt Optimization: Pre-calculates linear magnitudes to eliminate
+   * approximately 40,000 redundant Math.pow calls across spectral functions.
    */
   private async analyzeFrequency(
     audioBuffer: AudioBuffer,
@@ -457,26 +498,30 @@ export class AudioAnalysisService {
   ): Promise<FrequencyAnalysis> {
     const fftSize = 8192;
     const sampleRate = audioBuffer.sampleRate;
+    const length = spectrum.length;
 
-    // ⚡ Bolt: Calculate total energy once to avoid redundant O(N) passes in each band analysis
+    // ⚡ Bolt: Pre-calculate linear magnitudes
+    const linearMagnitudes = new Float32Array(length);
     let totalEnergy = 0;
-    for (const band of spectrum) {
-      totalEnergy += Math.pow(10, band.magnitude / 20);
+    for (let i = 0; i < length; i++) {
+      const lin = Math.pow(10, spectrum[i].magnitude * 0.05); // mag/20
+      linearMagnitudes[i] = lin;
+      totalEnergy += lin;
     }
     const safeTotalEnergy = totalEnergy + 1e-10;
 
-    const subBass = this.analyzeFrequencyBand(spectrum, 20, 60, sampleRate, fftSize, safeTotalEnergy);
-    const bass = this.analyzeFrequencyBand(spectrum, 60, 250, sampleRate, fftSize, safeTotalEnergy);
-    const lowMids = this.analyzeFrequencyBand(spectrum, 250, 500, sampleRate, fftSize, safeTotalEnergy);
-    const mids = this.analyzeFrequencyBand(spectrum, 500, 2000, sampleRate, fftSize, safeTotalEnergy);
-    const highMids = this.analyzeFrequencyBand(spectrum, 2000, 4000, sampleRate, fftSize, safeTotalEnergy);
-    const presence = this.analyzeFrequencyBand(spectrum, 4000, 6000, sampleRate, fftSize, safeTotalEnergy);
-    const brilliance = this.analyzeFrequencyBand(spectrum, 6000, 20000, sampleRate, fftSize, safeTotalEnergy);
+    const subBass = this.analyzeFrequencyBand(linearMagnitudes, spectrum, 20, 60, sampleRate, fftSize, safeTotalEnergy);
+    const bass = this.analyzeFrequencyBand(linearMagnitudes, spectrum, 60, 250, sampleRate, fftSize, safeTotalEnergy);
+    const lowMids = this.analyzeFrequencyBand(linearMagnitudes, spectrum, 250, 500, sampleRate, fftSize, safeTotalEnergy);
+    const mids = this.analyzeFrequencyBand(linearMagnitudes, spectrum, 500, 2000, sampleRate, fftSize, safeTotalEnergy);
+    const highMids = this.analyzeFrequencyBand(linearMagnitudes, spectrum, 2000, 4000, sampleRate, fftSize, safeTotalEnergy);
+    const presence = this.analyzeFrequencyBand(linearMagnitudes, spectrum, 4000, 6000, sampleRate, fftSize, safeTotalEnergy);
+    const brilliance = this.analyzeFrequencyBand(linearMagnitudes, spectrum, 6000, 20000, sampleRate, fftSize, safeTotalEnergy);
 
-    const spectralCentroid = this.calculateSpectralCentroid(spectrum, sampleRate, fftSize);
-    const spectralRolloff = this.calculateSpectralRolloff(spectrum, sampleRate, fftSize);
+    const spectralCentroid = this.calculateSpectralCentroid(linearMagnitudes, sampleRate, fftSize);
+    const spectralRolloff = this.calculateSpectralRolloff(linearMagnitudes, totalEnergy, sampleRate, fftSize);
     const spectralFlux = this.calculateSpectralFlux(mono, fftSize, sampleRate);
-    const spectralFlatness = this.calculateSpectralFlatness(spectrum);
+    const spectralFlatness = this.calculateSpectralFlatness(linearMagnitudes);
 
     const dominantFrequencies = this.findDominantFrequencies(spectrum, sampleRate, fftSize);
 
@@ -499,8 +544,10 @@ export class AudioAnalysisService {
 
   /**
    * Analyze specific frequency band.
+   * ⚡ Bolt: Reuses linearMagnitudes to avoid Math.pow.
    */
   private analyzeFrequencyBand(
+    linearMagnitudes: Float32Array,
     spectrum: FrequencyBand[],
     minFreq: number,
     maxFreq: number,
@@ -520,7 +567,7 @@ export class AudioAnalysisService {
       const mag = spectrum[i].magnitude;
       sumMagnitude += mag;
       peakMagnitude = Math.max(peakMagnitude, mag);
-      sumEnergy += Math.pow(10, mag / 20);
+      sumEnergy += linearMagnitudes[i];
       count++;
     }
 
@@ -540,19 +587,20 @@ export class AudioAnalysisService {
 
   /**
    * Calculate spectral centroid (brightness).
+   * ⚡ Bolt: Reuses linearMagnitudes to avoid Math.pow.
    */
   private calculateSpectralCentroid(
-    spectrum: FrequencyBand[],
+    linearMagnitudes: Float32Array,
     sampleRate: number,
     fftSize: number
   ): number {
     let weightedSum = 0;
     let magnitudeSum = 0;
 
-    for (let i = 0; i < spectrum.length; i++) {
-      const frequency = (i * sampleRate) / fftSize;
-      const magnitude = Math.pow(10, spectrum[i].magnitude / 20);
-      weightedSum += frequency * magnitude;
+    const binToFreq = sampleRate / fftSize;
+    for (let i = 0; i < linearMagnitudes.length; i++) {
+      const magnitude = linearMagnitudes[i];
+      weightedSum += (i * binToFreq) * magnitude;
       magnitudeSum += magnitude;
     }
 
@@ -561,28 +609,25 @@ export class AudioAnalysisService {
 
   /**
    * Calculate spectral rolloff.
+   * ⚡ Bolt: Reuses linearMagnitudes and pre-calculated totalEnergy.
    */
   private calculateSpectralRolloff(
-    spectrum: FrequencyBand[],
+    linearMagnitudes: Float32Array,
+    totalEnergy: number,
     sampleRate: number,
     fftSize: number
   ): number {
-    const threshold = 0.85;
-    let totalEnergy = 0;
-
-    for (const band of spectrum) {
-      totalEnergy += Math.pow(10, band.magnitude / 20);
-    }
-
+    const threshold = 0.85 * totalEnergy;
     let cumulativeEnergy = 0;
-    for (let i = 0; i < spectrum.length; i++) {
-      cumulativeEnergy += Math.pow(10, spectrum[i].magnitude / 20);
-      if (cumulativeEnergy >= threshold * totalEnergy) {
+
+    for (let i = 0; i < linearMagnitudes.length; i++) {
+      cumulativeEnergy += linearMagnitudes[i];
+      if (cumulativeEnergy >= threshold) {
         return (i * sampleRate) / fftSize;
       }
     }
 
-    return (spectrum.length * sampleRate) / fftSize;
+    return (linearMagnitudes.length * sampleRate) / fftSize;
   }
 
   /**
@@ -612,19 +657,21 @@ export class AudioAnalysisService {
 
   /**
    * Calculate spectral flatness.
+   * ⚡ Bolt: Reuses linearMagnitudes.
    */
-  private calculateSpectralFlatness(spectrum: FrequencyBand[]): number {
+  private calculateSpectralFlatness(linearMagnitudes: Float32Array): number {
+    const length = linearMagnitudes.length;
     let geometricMean = 0;
     let arithmeticMean = 0;
 
-    for (const band of spectrum) {
-      const magnitude = Math.pow(10, band.magnitude / 20);
+    for (let i = 0; i < length; i++) {
+      const magnitude = linearMagnitudes[i];
       geometricMean += Math.log(magnitude + 1e-10);
       arithmeticMean += magnitude;
     }
 
-    geometricMean = Math.exp(geometricMean / spectrum.length);
-    arithmeticMean /= spectrum.length;
+    geometricMean = Math.exp(geometricMean / length);
+    arithmeticMean /= length;
 
     return arithmeticMean > 0 ? geometricMean / arithmeticMean : 0;
   }
