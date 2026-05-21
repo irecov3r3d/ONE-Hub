@@ -20,15 +20,16 @@ export class AdvancedKeyDetection {
 
   /**
    * Detect musical key using chromagram and template matching
+   * ⚡ Bolt: Supports pre-calculated magnitudes to avoid redundant FFTs.
    */
-  async detectKey(audioBuffer: AudioBuffer): Promise<{
+  async detectKey(audioBuffer: AudioBuffer, preCalculatedMagnitudes?: Float32Array): Promise<{
     key: string;
     scale: string;
     confidence: number;
     alternatives: Array<{ key: string; confidence: number }>;
   }> {
     // Calculate chromagram (pitch class distribution)
-    const chromagram = await this.calculateChromagram(audioBuffer);
+    const chromagram = await this.calculateChromagram(audioBuffer, preCalculatedMagnitudes);
 
     // Normalize chromagram
     const normalizedChroma = this.normalizeChromagram(chromagram);
@@ -55,23 +56,40 @@ export class AdvancedKeyDetection {
 
   /**
    * Calculate chromagram (12-bin pitch class histogram)
+   * ⚡ Bolt: Uses pre-calculated linear magnitudes if provided.
    */
-  private async calculateChromagram(audioBuffer: AudioBuffer): Promise<number[]> {
+  private async calculateChromagram(audioBuffer: AudioBuffer, preCalculatedMagnitudes?: Float32Array): Promise<number[]> {
     const chromagram = new Array(12).fill(0);
-
-    // Get frequency spectrum
-    const spectrum = await this.fftEngine.performFFT(audioBuffer, 8192);
     const sampleRate = audioBuffer.sampleRate;
+    const fftSize = 8192;
 
-    // Map frequencies to pitch classes
-    for (const bin of spectrum) {
-      if (bin.frequency < 80 || bin.frequency > 5000) continue;
+    if (preCalculatedMagnitudes) {
+      // ⚡ Bolt: Map from pre-calculated linear magnitudes
+      const freqStep = sampleRate / fftSize;
+      for (let i = 0; i < preCalculatedMagnitudes.length; i++) {
+        const frequency = i * freqStep;
+        if (frequency < 80 || frequency > 5000) continue;
 
-      const magnitude = Math.pow(10, bin.magnitude / 20);
-      const pitchClass = this.frequencyToPitchClass(bin.frequency);
+        const magnitude = preCalculatedMagnitudes[i];
+        const pitchClass = this.frequencyToPitchClass(frequency);
+        if (pitchClass !== -1) {
+          chromagram[pitchClass] += magnitude;
+        }
+      }
+    } else {
+      // Get frequency spectrum
+      const spectrum = await this.fftEngine.performFFT(audioBuffer, fftSize);
 
-      if (pitchClass !== -1) {
-        chromagram[pitchClass] += magnitude;
+      // Map frequencies to pitch classes
+      for (const bin of spectrum) {
+        if (bin.frequency < 80 || bin.frequency > 5000) continue;
+
+        const magnitude = Math.pow(10, bin.magnitude / 20);
+        const pitchClass = this.frequencyToPitchClass(bin.frequency);
+
+        if (pitchClass !== -1) {
+          chromagram[pitchClass] += magnitude;
+        }
       }
     }
 
