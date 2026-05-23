@@ -457,26 +457,31 @@ export class AudioAnalysisService {
   ): Promise<FrequencyAnalysis> {
     const fftSize = 8192;
     const sampleRate = audioBuffer.sampleRate;
+    const numBins = spectrum.length;
 
-    // ⚡ Bolt: Calculate total energy once to avoid redundant O(N) passes in each band analysis
+    // ⚡ Bolt: Pre-calculate linear magnitudes into a single Float32Array.
+    // This eliminates ~40,000 redundant Math.pow calls across subsequent spectral analyses.
+    const linearMagnitudes = new Float32Array(numBins);
     let totalEnergy = 0;
-    for (const band of spectrum) {
-      totalEnergy += Math.pow(10, band.magnitude / 20);
+    for (let i = 0; i < numBins; i++) {
+      const lin = Math.pow(10, spectrum[i].magnitude / 20);
+      linearMagnitudes[i] = lin;
+      totalEnergy += lin;
     }
     const safeTotalEnergy = totalEnergy + 1e-10;
 
-    const subBass = this.analyzeFrequencyBand(spectrum, 20, 60, sampleRate, fftSize, safeTotalEnergy);
-    const bass = this.analyzeFrequencyBand(spectrum, 60, 250, sampleRate, fftSize, safeTotalEnergy);
-    const lowMids = this.analyzeFrequencyBand(spectrum, 250, 500, sampleRate, fftSize, safeTotalEnergy);
-    const mids = this.analyzeFrequencyBand(spectrum, 500, 2000, sampleRate, fftSize, safeTotalEnergy);
-    const highMids = this.analyzeFrequencyBand(spectrum, 2000, 4000, sampleRate, fftSize, safeTotalEnergy);
-    const presence = this.analyzeFrequencyBand(spectrum, 4000, 6000, sampleRate, fftSize, safeTotalEnergy);
-    const brilliance = this.analyzeFrequencyBand(spectrum, 6000, 20000, sampleRate, fftSize, safeTotalEnergy);
+    const subBass = this.analyzeFrequencyBand(spectrum, linearMagnitudes, 20, 60, sampleRate, fftSize, safeTotalEnergy);
+    const bass = this.analyzeFrequencyBand(spectrum, linearMagnitudes, 60, 250, sampleRate, fftSize, safeTotalEnergy);
+    const lowMids = this.analyzeFrequencyBand(spectrum, linearMagnitudes, 250, 500, sampleRate, fftSize, safeTotalEnergy);
+    const mids = this.analyzeFrequencyBand(spectrum, linearMagnitudes, 500, 2000, sampleRate, fftSize, safeTotalEnergy);
+    const highMids = this.analyzeFrequencyBand(spectrum, linearMagnitudes, 2000, 4000, sampleRate, fftSize, safeTotalEnergy);
+    const presence = this.analyzeFrequencyBand(spectrum, linearMagnitudes, 4000, 6000, sampleRate, fftSize, safeTotalEnergy);
+    const brilliance = this.analyzeFrequencyBand(spectrum, linearMagnitudes, 6000, 20000, sampleRate, fftSize, safeTotalEnergy);
 
-    const spectralCentroid = this.calculateSpectralCentroid(spectrum, sampleRate, fftSize);
-    const spectralRolloff = this.calculateSpectralRolloff(spectrum, sampleRate, fftSize);
+    const spectralCentroid = this.calculateSpectralCentroid(linearMagnitudes, sampleRate, fftSize);
+    const spectralRolloff = this.calculateSpectralRolloff(linearMagnitudes, sampleRate, fftSize, safeTotalEnergy);
     const spectralFlux = this.calculateSpectralFlux(mono, fftSize, sampleRate);
-    const spectralFlatness = this.calculateSpectralFlatness(spectrum);
+    const spectralFlatness = this.calculateSpectralFlatness(linearMagnitudes);
 
     const dominantFrequencies = this.findDominantFrequencies(spectrum, sampleRate, fftSize);
 
@@ -502,6 +507,7 @@ export class AudioAnalysisService {
    */
   private analyzeFrequencyBand(
     spectrum: FrequencyBand[],
+    linearMagnitudes: Float32Array,
     minFreq: number,
     maxFreq: number,
     sampleRate: number,
@@ -520,7 +526,7 @@ export class AudioAnalysisService {
       const mag = spectrum[i].magnitude;
       sumMagnitude += mag;
       peakMagnitude = Math.max(peakMagnitude, mag);
-      sumEnergy += Math.pow(10, mag / 20);
+      sumEnergy += linearMagnitudes[i]; // ⚡ Bolt: Reuse pre-calculated linear magnitude
       count++;
     }
 
@@ -540,18 +546,19 @@ export class AudioAnalysisService {
 
   /**
    * Calculate spectral centroid (brightness).
+   * ⚡ Bolt: Uses pre-calculated linear magnitudes.
    */
   private calculateSpectralCentroid(
-    spectrum: FrequencyBand[],
+    linearMagnitudes: Float32Array,
     sampleRate: number,
     fftSize: number
   ): number {
     let weightedSum = 0;
     let magnitudeSum = 0;
 
-    for (let i = 0; i < spectrum.length; i++) {
+    for (let i = 0; i < linearMagnitudes.length; i++) {
       const frequency = (i * sampleRate) / fftSize;
-      const magnitude = Math.pow(10, spectrum[i].magnitude / 20);
+      const magnitude = linearMagnitudes[i];
       weightedSum += frequency * magnitude;
       magnitudeSum += magnitude;
     }
@@ -561,28 +568,26 @@ export class AudioAnalysisService {
 
   /**
    * Calculate spectral rolloff.
+   * ⚡ Bolt: Uses pre-calculated linear magnitudes and total energy.
    */
   private calculateSpectralRolloff(
-    spectrum: FrequencyBand[],
+    linearMagnitudes: Float32Array,
     sampleRate: number,
-    fftSize: number
+    fftSize: number,
+    totalEnergy: number
   ): number {
     const threshold = 0.85;
-    let totalEnergy = 0;
-
-    for (const band of spectrum) {
-      totalEnergy += Math.pow(10, band.magnitude / 20);
-    }
+    const targetEnergy = threshold * totalEnergy;
 
     let cumulativeEnergy = 0;
-    for (let i = 0; i < spectrum.length; i++) {
-      cumulativeEnergy += Math.pow(10, spectrum[i].magnitude / 20);
-      if (cumulativeEnergy >= threshold * totalEnergy) {
+    for (let i = 0; i < linearMagnitudes.length; i++) {
+      cumulativeEnergy += linearMagnitudes[i];
+      if (cumulativeEnergy >= targetEnergy) {
         return (i * sampleRate) / fftSize;
       }
     }
 
-    return (spectrum.length * sampleRate) / fftSize;
+    return (linearMagnitudes.length * sampleRate) / fftSize;
   }
 
   /**
@@ -612,54 +617,62 @@ export class AudioAnalysisService {
 
   /**
    * Calculate spectral flatness.
+   * ⚡ Bolt: Uses pre-calculated linear magnitudes.
    */
-  private calculateSpectralFlatness(spectrum: FrequencyBand[]): number {
+  private calculateSpectralFlatness(linearMagnitudes: Float32Array): number {
     let geometricMean = 0;
     let arithmeticMean = 0;
+    const n = linearMagnitudes.length;
 
-    for (const band of spectrum) {
-      const magnitude = Math.pow(10, band.magnitude / 20);
+    for (let i = 0; i < n; i++) {
+      const magnitude = linearMagnitudes[i];
       geometricMean += Math.log(magnitude + 1e-10);
       arithmeticMean += magnitude;
     }
 
-    geometricMean = Math.exp(geometricMean / spectrum.length);
-    arithmeticMean /= spectrum.length;
+    geometricMean = Math.exp(geometricMean / n);
+    arithmeticMean /= n;
 
     return arithmeticMean > 0 ? geometricMean / arithmeticMean : 0;
   }
 
   /**
    * Find dominant frequencies in the spectrum.
+   * ⚡ Bolt Optimization: Defer note conversion until after top 10 selection to avoid
+   * thousands of expensive Math.log2/Math.pow calls.
    */
   private findDominantFrequencies(
     spectrum: FrequencyBand[],
     sampleRate: number,
     fftSize: number
   ): DominantFrequency[] {
-    const dominantFreqs: DominantFrequency[] = [];
+    const candidates: DominantFrequency[] = [];
     const threshold = -40;
 
     for (let i = 10; i < spectrum.length - 10; i++) {
-      if (spectrum[i].magnitude > threshold) {
-        const isLocalMax =
-          spectrum[i].magnitude > spectrum[i - 1].magnitude &&
-          spectrum[i].magnitude > spectrum[i + 1].magnitude;
-
-        if (isLocalMax) {
-          const frequency = (i * sampleRate) / fftSize;
-          dominantFreqs.push({
-            frequency,
-            magnitude: spectrum[i].magnitude,
-            note: this.frequencyToNote(frequency),
+      const mag = spectrum[i].magnitude;
+      if (mag > threshold) {
+        if (mag > spectrum[i - 1].magnitude && mag > spectrum[i + 1].magnitude) {
+          candidates.push({
+            frequency: (i * sampleRate) / fftSize,
+            magnitude: mag,
+            note: '', // Defer conversion
           });
         }
       }
     }
 
-    return dominantFreqs
+    // Sort and take top 10
+    const top10 = candidates
       .sort((a, b) => b.magnitude - a.magnitude)
       .slice(0, 10);
+
+    // Apply note conversion only to the winners
+    for (const freq of top10) {
+      freq.note = this.frequencyToNote(freq.frequency);
+    }
+
+    return top10;
   }
 
   /**
