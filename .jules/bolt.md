@@ -29,3 +29,7 @@
 ## 2026-05-04 - TypedArray vs DataView in High-Frequency Loops
 **Learning:** `DataView.setInt16` (and other `set` methods) are significantly slower than direct `TypedArray` access in high-frequency loops (e.g., millions of iterations). For WAV export, switching to a direct `Int16Array` view of the destination `ArrayBuffer` on little-endian hosts achieved a measurable ~1.6x speedup. Unrolling the loop for common channel counts (like stereo) provides additional performance gains by reducing indexing overhead and improving JIT optimization.
 **Action:** When performing millions of writes to an `ArrayBuffer`, check host endianness and prefer direct `TypedArray` views over `DataView` whenever possible.
+
+## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
+**Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
+**Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
