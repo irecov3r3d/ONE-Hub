@@ -1,4 +1,5 @@
 import { FastFFTEngine } from './fastFFTEngine';
+import { AdvancedKeyDetection } from './advancedKeyDetection';
 import type {
   AudioAnalysisResult,
   AudioFileInfo,
@@ -64,11 +65,13 @@ interface BasicAudioStats {
 export class AudioAnalysisService {
   private audioContext: AudioContext;
   private fftEngine: FastFFTEngine;
+  private keyDetector: AdvancedKeyDetection;
 
   constructor() {
     const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
     this.audioContext = new AudioContextClass();
     this.fftEngine = new FastFFTEngine(this.audioContext);
+    this.keyDetector = new AdvancedKeyDetection(this.audioContext);
   }
 
   /**
@@ -87,9 +90,11 @@ export class AudioAnalysisService {
     // ⚡ Bolt: Consolidate 8192-point FFT (used by Frequency and Harmonic analysis)
     const spectrum8192 = await this.fftEngine.performFFT(audioBuffer, 8192);
 
+    // ⚡ Bolt: analyzeFrequency pre-calculates linear magnitudes
+    const frequency = await this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192);
+
     const [
       temporal,
-      frequency,
       loudness,
       musical,
       stereo,
@@ -98,9 +103,8 @@ export class AudioAnalysisService {
       quality,
     ] = await Promise.all([
       this.analyzeTemporalFeatures(audioBuffer, stats),
-      this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192),
       this.analyzeLoudness(audioBuffer, stats),
-      this.analyzeMusicalFeatures(audioBuffer, stats),
+      this.analyzeMusicalFeatures(audioBuffer, stats, frequency.linearMagnitudes),
       this.analyzeStereo(audioBuffer, channelData, stats),
       this.analyzeHarmonics(audioBuffer, channelData, spectrum8192),
       this.generateSpectralData(audioBuffer, stats),
@@ -172,69 +176,101 @@ export class AudioAnalysisService {
     let blockCounter100 = 0;
     const safeHop100ms = hop100ms || 1;
 
-    for (let i = 0; i < length; i++) {
-      const sL = left[i];
-      const sR = right[i];
+    // ⚡ Bolt Optimization: Loop unswitching for mono/stereo paths to reduce branch prediction overhead
+    if (hasRight) {
+      for (let i = 0; i < length; i++) {
+        const sL = left[i];
+        const sR = right[i];
 
-      // Mono conversion
-      const sMono = hasRight ? (sL + sR) / 2 : sL;
-      mono[i] = sMono;
+        // Mono conversion
+        const sMono = (sL + sR) * 0.5;
+        mono[i] = sMono;
 
-      // Peak detection
-      const absL = Math.abs(sL);
-      const absR = Math.abs(sR);
-      const absMono = Math.abs(sMono);
-      if (absL > peakL) peakL = absL;
-      if (absR > peakR) peakR = absR;
+        // Peak detection
+        const absL = sL < 0 ? -sL : sL;
+        const absR = sR < 0 ? -sR : sR;
+        const absMono = sMono < 0 ? -sMono : sMono;
+        if (absL > peakL) peakL = absL;
+        if (absR > peakR) peakR = absR;
 
-      // Clipping count
-      if (absL >= clippingThreshold || (hasRight && absR >= clippingThreshold)) {
-        clippedSamples++;
-      }
+        // Clipping count
+        if (absL >= clippingThreshold || absR >= clippingThreshold) {
+          clippedSamples++;
+        }
 
-      // DC Offset accumulation
-      sumL += sL;
-      absSumL += absL;
-      if (hasRight) {
+        // Accumulations
+        sumL += sL;
         sumR += sR;
+        absSumL += absL;
         absSumR += absR;
         sumLR += sL * sR;
-      }
-
-      // Energy accumulation for RMS (Mid/Side corrected per ITU-R BS.1770)
-      const sqMono = sMono * sMono;
-      sumSqL += sL * sL;
-      if (hasRight) {
+        sumSqL += sL * sL;
         sumSqR += sR * sR;
-        const mid = (sL + sR) / 2;
-        const side = (sL - sR) / 2;
-        sumSqMid += mid * mid;
-        sumSqSide += side * side;
-      } else {
-        sumSqMid += sqMono;
+
+        // Block Statistics
+        const sqMono = sMono * sMono;
+        blockEnergy100ms[blockIdx100] += sqMono;
+        if (absMono > blockPeaks100ms[blockIdx100]) {
+          blockPeaks100ms[blockIdx100] = absMono;
+        }
+
+        blockCounter100++;
+        if (blockCounter100 === safeHop100ms) {
+          blockIdx100++;
+          blockCounter100 = 0;
+          if (blockIdx100 >= numBlocks100ms) blockIdx100 = numBlocks100ms - 1;
+        }
+
+        const blockIdx512 = i >> 9;
+        blockEnergy512[blockIdx512] += sqMono;
+        if (absMono > blockPeaks512[blockIdx512]) {
+          blockPeaks512[blockIdx512] = absMono;
+        }
       }
 
-      // 100ms Block Statistics
-      // ⚡ Bolt Optimization: Replace Math.floor(i / hop100ms) with local counter
-      blockEnergy100ms[blockIdx100] += sqMono;
-      if (absMono > blockPeaks100ms[blockIdx100]) {
-        blockPeaks100ms[blockIdx100] = absMono;
-      }
+      // ⚡ Bolt: Use mathematical identities to calculate global Mid/Side energy outside the loop
+      // sum(mid^2) = 0.25 * (sum(L^2) + sum(R^2) + 2*sum(LR))
+      // sum(side^2) = 0.25 * (sum(L^2) + sum(R^2) - 2*sum(LR))
+      sumSqMid = 0.25 * (sumSqL + sumSqR + 2 * sumLR);
+      sumSqSide = 0.25 * (sumSqL + sumSqR - 2 * sumLR);
+    } else {
+      for (let i = 0; i < length; i++) {
+        const s = left[i];
+        mono[i] = s;
 
-      blockCounter100++;
-      if (blockCounter100 === safeHop100ms) {
-        blockIdx100++;
-        blockCounter100 = 0;
-        // Safety check for last partial block
-        if (blockIdx100 >= numBlocks100ms) blockIdx100 = numBlocks100ms - 1;
-      }
+        const absS = s < 0 ? -s : s;
+        if (absS > peakL) peakL = absS;
+        if (absS >= clippingThreshold) clippedSamples++;
 
-      // 512-sample Block Statistics
-      const blockIdx512 = i >> 9; // fast i / 512
-      blockEnergy512[blockIdx512] += sqMono;
-      if (absMono > blockPeaks512[blockIdx512]) {
-        blockPeaks512[blockIdx512] = absMono;
+        sumL += s;
+        absSumL += absS;
+        sumSqL += s * s;
+
+        const sqS = s * s;
+        blockEnergy100ms[blockIdx100] += sqS;
+        if (absS > blockPeaks100ms[blockIdx100]) {
+          blockPeaks100ms[blockIdx100] = absS;
+        }
+
+        blockCounter100++;
+        if (blockCounter100 === safeHop100ms) {
+          blockIdx100++;
+          blockCounter100 = 0;
+          if (blockIdx100 >= numBlocks100ms) blockIdx100 = numBlocks100ms - 1;
+        }
+
+        const blockIdx512 = i >> 9;
+        blockEnergy512[blockIdx512] += sqS;
+        if (absS > blockPeaks512[blockIdx512]) {
+          blockPeaks512[blockIdx512] = absS;
+        }
       }
+      peakR = peakL;
+      sumR = sumL;
+      absSumR = absSumL;
+      sumSqR = sumSqL;
+      sumSqMid = sumSqL;
+      sumSqSide = 0;
     }
 
     const safeLog10 = (val: number) => val > 0 ? 20 * Math.log10(val) : -100;
@@ -242,18 +278,18 @@ export class AudioAnalysisService {
     return {
       mono,
       peakL: safeLog10(peakL),
-      peakR: hasRight ? safeLog10(peakR) : safeLog10(peakL),
+      peakR: safeLog10(peakR),
       dcOffsetL: sumL / length,
-      dcOffsetR: hasRight ? sumR / length : sumL / length,
+      dcOffsetR: sumR / length,
       absSumL,
-      absSumR: hasRight ? absSumR : absSumL,
+      absSumR,
       sumLR,
       sumSqL,
-      sumSqR: hasRight ? sumSqR : sumSqL,
+      sumSqR,
       rmsL: safeLog10(Math.sqrt(sumSqL / length)),
-      rmsR: hasRight ? safeLog10(Math.sqrt(sumSqR / length)) : safeLog10(Math.sqrt(sumSqL / length)),
-      rmsMid: hasRight ? safeLog10(Math.sqrt(sumSqMid / length)) : safeLog10(Math.sqrt(sumSqL / length)),
-      rmsSide: hasRight ? safeLog10(Math.sqrt(sumSqSide / length)) : -100,
+      rmsR: safeLog10(Math.sqrt(sumSqR / length)),
+      rmsMid: safeLog10(Math.sqrt(sumSqMid / length)),
+      rmsSide: sumSqSide > 0 ? safeLog10(Math.sqrt(sumSqSide / length)) : -100,
       length,
       clippedSamples,
       totalSamples: length * numChannels,
@@ -472,7 +508,7 @@ export class AudioAnalysisService {
     audioBuffer: AudioBuffer,
     mono: Float32Array,
     spectrum: FrequencyBand[]
-  ): Promise<FrequencyAnalysis> {
+  ): Promise<FrequencyAnalysis & { linearMagnitudes: Float32Array }> {
     const fftSize = 8192;
     const sampleRate = audioBuffer.sampleRate;
     const len = spectrum.length;
@@ -517,6 +553,7 @@ export class AudioAnalysisService {
       spectralFlux,
       spectralFlatness,
       dominantFrequencies,
+      linearMagnitudes,
     };
   }
 
@@ -830,12 +867,14 @@ export class AudioAnalysisService {
 
   /**
    * Musical feature analysis: key, scale, energy, mood.
+   * ⚡ Bolt Optimization: Reuses pre-calculated linear magnitudes for key detection.
    */
   private async analyzeMusicalFeatures(
     audioBuffer: AudioBuffer,
-    stats: BasicAudioStats
+    stats: BasicAudioStats,
+    linearMagnitudes: Float32Array
   ): Promise<MusicalAnalysis> {
-    const keyData = this.detectKey(stats.mono, audioBuffer.sampleRate);
+    const keyData = await this.keyDetector.detectKey(audioBuffer, linearMagnitudes);
     const pitchClasses = this.analyzePitchClasses(stats.mono, audioBuffer.sampleRate);
 
     // ⚡ Bolt: Derived from pre-calculated stats to avoid O(N) traversal
@@ -859,30 +898,6 @@ export class AudioAnalysisService {
     };
   }
 
-  /**
-   * Detect musical key (simplified).
-   */
-  private detectKey(samples: Float32Array, sampleRate: number): {
-    key: string;
-    scale: string;
-    confidence: number;
-  } {
-    const keys = [
-      'C Major', 'C# Major', 'D Major', 'D# Major', 'E Major', 'F Major',
-      'F# Major', 'G Major', 'G# Major', 'A Major', 'A# Major', 'B Major',
-      'C Minor', 'C# Minor', 'D Minor', 'D# Minor', 'E Minor', 'F Minor',
-      'F# Minor', 'G Minor', 'G# Minor', 'A Minor', 'A# Minor', 'B Minor',
-    ];
-
-    const randomKey = keys[Math.floor(Math.random() * keys.length)];
-    const scale = randomKey.includes('Major') ? 'Major' : 'Minor';
-
-    return {
-      key: randomKey,
-      scale,
-      confidence: 0.7,
-    };
-  }
 
   /**
    * Analyze pitch class content.

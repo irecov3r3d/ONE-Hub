@@ -8,8 +8,17 @@ These branches are core features, improvements, or related services for the Song
 - **Library Management**: `claude/music-vault-app-DNlEb` (Asset storage and user library)
 - **Rhythmic Generation**: `claude/beat-maker-app-Fhpg2` (Beat and MIDI generation)
 - **Organic Capture**: `codex/add-mvp-features-for-voice-recorder`, `codex/create-advanced-voice-recorder-app` (Vocal and instrument recording)
-- **Visuals**: `claude/auto-split-video-clips-gwIQz` (Automated video/visualizer generation)
-- **Optimization**: `bolt/*` (Performance-focused enhancements across all services)
+- **Visuals**: `claude/auto-split-video-clips-gwIQz`, `perf-optimize-waveform-generation-*` (Automated video/visualizer generation)
+- **Performance & Maintenance**:
+  - `bolt/*` (All performance optimization branches)
+  - `security-fix-*`
+  - `fix-insecure-randomness-upload-*`
+  - `fix-startup-and-upgrades-*`
+  - `claude/add-error-handling-*`
+  - `claude/analyze-prioritize-improvements-*`
+  - `claude/review-changes-*`
+  - `codex/organize-file-folders-neatly`
+  - `monorepo-extraction-script-fix-*`
 
 **Collaboration Pattern**:
 1. **Input**: Vocal/Organic capture (Voice Recorder) and MIDI/Beat generation (Beat Maker).

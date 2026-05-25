@@ -20,15 +20,18 @@ export class AdvancedKeyDetection {
 
   /**
    * Detect musical key using chromagram and template matching
+   * ⚡ Bolt Optimization: Added path to accept pre-calculated linear magnitudes to avoid redundant FFT passes.
    */
-  async detectKey(audioBuffer: AudioBuffer): Promise<{
+  async detectKey(audioBuffer: AudioBuffer, linearMagnitudes?: Float32Array): Promise<{
     key: string;
     scale: string;
     confidence: number;
     alternatives: Array<{ key: string; confidence: number }>;
   }> {
     // Calculate chromagram (pitch class distribution)
-    const chromagram = await this.calculateChromagram(audioBuffer);
+    const chromagram = linearMagnitudes
+      ? this.calculateChromagramFromMagnitudes(linearMagnitudes, audioBuffer.sampleRate)
+      : await this.calculateChromagram(audioBuffer);
 
     // Normalize chromagram
     const normalizedChroma = this.normalizeChromagram(chromagram);
@@ -69,6 +72,31 @@ export class AdvancedKeyDetection {
 
       const magnitude = Math.pow(10, bin.magnitude / 20);
       const pitchClass = this.frequencyToPitchClass(bin.frequency);
+
+      if (pitchClass !== -1) {
+        chromagram[pitchClass] += magnitude;
+      }
+    }
+
+    return chromagram;
+  }
+
+  /**
+   * ⚡ Bolt Optimization: Calculate chromagram directly from linear magnitudes.
+   */
+  private calculateChromagramFromMagnitudes(linearMagnitudes: Float32Array, sampleRate: number): number[] {
+    const chromagram = new Array(12).fill(0);
+    const fftSize = linearMagnitudes.length * 2;
+    const binFreqFactor = sampleRate / fftSize;
+
+    // Map frequencies to pitch classes (80Hz to 5kHz)
+    const minBin = Math.floor(80 / binFreqFactor);
+    const maxBin = Math.min(linearMagnitudes.length, Math.floor(5000 / binFreqFactor));
+
+    for (let i = minBin; i < maxBin; i++) {
+      const magnitude = linearMagnitudes[i];
+      const frequency = i * binFreqFactor;
+      const pitchClass = this.frequencyToPitchClass(frequency);
 
       if (pitchClass !== -1) {
         chromagram[pitchClass] += magnitude;
