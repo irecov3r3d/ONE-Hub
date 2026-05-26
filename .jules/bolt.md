@@ -33,3 +33,7 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2026-05-06 - Loop Unswitching and Algebraic Identity Optimization
+**Learning:** In hot loops like `analyzeBasicStats` (processing ~10.5M samples), even a simple ternary for channel count or separate mono/stereo paths with `if (hasRight)` inside the loop can incur branch prediction overhead. Loop unswitching (creating separate loops for mono and stereo) significantly reduces this overhead. Additionally, Mid/Side energy can be derived from global channel power and correlation using algebraic identities ($\sum mid^2 = 0.25 * (\sum L^2 + \sum R^2 + 2\sum LR)$), eliminating thousands of redundant operations per sample.
+**Action:** Use loop unswitching for high-frequency traversals with multiple configurations and leverage mathematical identities to derive multi-channel metrics from global sums.

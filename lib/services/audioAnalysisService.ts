@@ -87,6 +87,16 @@ export class AudioAnalysisService {
     // ⚡ Bolt: Consolidate 8192-point FFT (used by Frequency and Harmonic analysis)
     const spectrum8192 = await this.fftEngine.performFFT(audioBuffer, 8192);
 
+    // ⚡ Bolt: Pre-calculate linear magnitudes and total energy once for the shared 8192-point spectrum.
+    // This eliminates redundant O(M) traversals and thousands of Math.pow calls in downstream analyses.
+    const linearMagnitudes8192 = new Float32Array(spectrum8192.length);
+    let totalEnergy8192 = 0;
+    for (let i = 0; i < spectrum8192.length; i++) {
+      const lin = Math.pow(10, spectrum8192[i].magnitude / 20);
+      linearMagnitudes8192[i] = lin;
+      totalEnergy8192 += lin;
+    }
+
     const [
       temporal,
       frequency,
@@ -98,11 +108,11 @@ export class AudioAnalysisService {
       quality,
     ] = await Promise.all([
       this.analyzeTemporalFeatures(audioBuffer, stats),
-      this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192),
+      this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192, linearMagnitudes8192, totalEnergy8192),
       this.analyzeLoudness(audioBuffer, stats),
       this.analyzeMusicalFeatures(audioBuffer, stats),
       this.analyzeStereo(audioBuffer, channelData, stats),
-      this.analyzeHarmonics(audioBuffer, channelData, spectrum8192),
+      this.analyzeHarmonics(audioBuffer, channelData, spectrum8192, linearMagnitudes8192, totalEnergy8192),
       this.generateSpectralData(audioBuffer, stats),
       this.analyzeQuality(audioBuffer, stats),
     ]);
@@ -167,77 +177,114 @@ export class AudioAnalysisService {
     const left = channelData[0];
     const right = hasRight ? channelData[1] : left;
 
-    // ⚡ Bolt: Use local counters for block indexing to avoid Math.floor in hot loop
+    // ⚡ Bolt Optimization: Loop Unswitching for Mono/Stereo paths
+    // Eliminates branch prediction overhead in the hot O(N) loop.
     let blockIdx100 = 0;
     let blockCounter100 = 0;
     const safeHop100ms = hop100ms || 1;
 
-    for (let i = 0; i < length; i++) {
-      const sL = left[i];
-      const sR = right[i];
+    if (hasRight) {
+      // Optimized Stereo Loop
+      for (let i = 0; i < length; i++) {
+        const sL = left[i];
+        const sR = right[i];
 
-      // Mono conversion
-      const sMono = hasRight ? (sL + sR) / 2 : sL;
-      mono[i] = sMono;
+        // Mono conversion
+        const sMono = (sL + sR) * 0.5;
+        mono[i] = sMono;
 
-      // Peak detection
-      const absL = Math.abs(sL);
-      const absR = Math.abs(sR);
-      const absMono = Math.abs(sMono);
-      if (absL > peakL) peakL = absL;
-      if (absR > peakR) peakR = absR;
+        // Peak detection
+        const absL = Math.abs(sL);
+        const absR = Math.abs(sR);
+        const absMono = Math.abs(sMono);
+        if (absL > peakL) peakL = absL;
+        if (absR > peakR) peakR = absR;
 
-      // Clipping count
-      if (absL >= clippingThreshold || (hasRight && absR >= clippingThreshold)) {
-        clippedSamples++;
-      }
+        // Clipping count
+        if (absL >= clippingThreshold || absR >= clippingThreshold) {
+          clippedSamples++;
+        }
 
-      // DC Offset accumulation
-      sumL += sL;
-      absSumL += absL;
-      if (hasRight) {
+        // DC Offset & Correlation accumulation
+        sumL += sL;
         sumR += sR;
+        absSumL += absL;
         absSumR += absR;
         sumLR += sL * sR;
-      }
 
-      // Energy accumulation for RMS (Mid/Side corrected per ITU-R BS.1770)
-      const sqMono = sMono * sMono;
-      sumSqL += sL * sL;
-      if (hasRight) {
+        // Energy accumulation
+        const sqMono = sMono * sMono;
+        sumSqL += sL * sL;
         sumSqR += sR * sR;
-        const mid = (sL + sR) / 2;
-        const side = (sL - sR) / 2;
-        sumSqMid += mid * mid;
-        sumSqSide += side * side;
-      } else {
-        sumSqMid += sqMono;
-      }
 
-      // 100ms Block Statistics
-      // ⚡ Bolt Optimization: Replace Math.floor(i / hop100ms) with local counter
-      blockEnergy100ms[blockIdx100] += sqMono;
-      if (absMono > blockPeaks100ms[blockIdx100]) {
-        blockPeaks100ms[blockIdx100] = absMono;
-      }
+        // 100ms Block Statistics
+        blockEnergy100ms[blockIdx100] += sqMono;
+        if (absMono > blockPeaks100ms[blockIdx100]) {
+          blockPeaks100ms[blockIdx100] = absMono;
+        }
 
-      blockCounter100++;
-      if (blockCounter100 === safeHop100ms) {
-        blockIdx100++;
-        blockCounter100 = 0;
-        // Safety check for last partial block
-        if (blockIdx100 >= numBlocks100ms) blockIdx100 = numBlocks100ms - 1;
-      }
+        blockCounter100++;
+        if (blockCounter100 === safeHop100ms) {
+          blockIdx100++;
+          blockCounter100 = 0;
+          if (blockIdx100 >= numBlocks100ms) blockIdx100 = numBlocks100ms - 1;
+        }
 
-      // 512-sample Block Statistics
-      const blockIdx512 = i >> 9; // fast i / 512
-      blockEnergy512[blockIdx512] += sqMono;
-      if (absMono > blockPeaks512[blockIdx512]) {
-        blockPeaks512[blockIdx512] = absMono;
+        // 512-sample Block Statistics
+        const blockIdx512 = i >> 9;
+        blockEnergy512[blockIdx512] += sqMono;
+        if (absMono > blockPeaks512[blockIdx512]) {
+          blockPeaks512[blockIdx512] = absMono;
+        }
+      }
+    } else {
+      // Optimized Mono Loop
+      for (let i = 0; i < length; i++) {
+        const sL = left[i];
+        mono[i] = sL;
+
+        const absL = Math.abs(sL);
+        if (absL > peakL) peakL = absL;
+        if (absL >= clippingThreshold) clippedSamples++;
+
+        sumL += sL;
+        absSumL += absL;
+        const sqL = sL * sL;
+        sumSqL += sqL;
+
+        blockEnergy100ms[blockIdx100] += sqL;
+        if (absL > blockPeaks100ms[blockIdx100]) {
+          blockPeaks100ms[blockIdx100] = absL;
+        }
+
+        blockCounter100++;
+        if (blockCounter100 === safeHop100ms) {
+          blockIdx100++;
+          blockCounter100 = 0;
+          if (blockIdx100 >= numBlocks100ms) blockIdx100 = numBlocks100ms - 1;
+        }
+
+        const blockIdx512 = i >> 9;
+        blockEnergy512[blockIdx512] += sqL;
+        if (absL > blockPeaks512[blockIdx512]) {
+          blockPeaks512[blockIdx512] = absL;
+        }
       }
     }
 
     const safeLog10 = (val: number) => val > 0 ? 20 * Math.log10(val) : -100;
+
+    // ⚡ Bolt Optimization: Use mathematical identities to calculate global Mid/Side energy
+    // sumMid^2 = 0.25 * (sumL^2 + sumR^2 + 2 * sumLR)
+    // sumSide^2 = 0.25 * (sumL^2 + sumR^2 - 2 * sumLR)
+    // Eliminates thousands of operations inside the O(N) loop.
+    if (hasRight) {
+      sumSqMid = 0.25 * (sumSqL + sumSqR + 2 * sumLR);
+      sumSqSide = 0.25 * (sumSqL + sumSqR - 2 * sumLR);
+    } else {
+      sumSqMid = sumSqL;
+      sumSqSide = 0;
+    }
 
     return {
       mono,
@@ -252,8 +299,8 @@ export class AudioAnalysisService {
       sumSqR: hasRight ? sumSqR : sumSqL,
       rmsL: safeLog10(Math.sqrt(sumSqL / length)),
       rmsR: hasRight ? safeLog10(Math.sqrt(sumSqR / length)) : safeLog10(Math.sqrt(sumSqL / length)),
-      rmsMid: hasRight ? safeLog10(Math.sqrt(sumSqMid / length)) : safeLog10(Math.sqrt(sumSqL / length)),
-      rmsSide: hasRight ? safeLog10(Math.sqrt(sumSqSide / length)) : -100,
+      rmsMid: safeLog10(Math.sqrt(sumSqMid / length)),
+      rmsSide: hasRight ? safeLog10(Math.sqrt(Math.max(0, sumSqSide) / length)) : -100,
       length,
       clippedSamples,
       totalSamples: length * numChannels,
@@ -466,26 +513,17 @@ export class AudioAnalysisService {
 
   /**
    * Frequency analysis: spectrum, frequency bands, spectral features.
-   * ⚡ Bolt Optimization: Pre-calculates linear magnitudes to eliminate redundant Math.pow calls.
+   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes to eliminate redundant O(M) traversals.
    */
   private async analyzeFrequency(
     audioBuffer: AudioBuffer,
     mono: Float32Array,
-    spectrum: FrequencyBand[]
+    spectrum: FrequencyBand[],
+    linearMagnitudes: Float32Array,
+    totalEnergy: number
   ): Promise<FrequencyAnalysis> {
     const fftSize = 8192;
     const sampleRate = audioBuffer.sampleRate;
-    const len = spectrum.length;
-
-    // ⚡ Bolt: Pre-calculate linear magnitudes from decibels
-    // This eliminates ~40,000 redundant Math.pow(10, mag/20) calls per analysis
-    const linearMagnitudes = new Float32Array(len);
-    let totalEnergy = 0;
-    for (let i = 0; i < len; i++) {
-      const lin = Math.pow(10, spectrum[i].magnitude / 20);
-      linearMagnitudes[i] = lin;
-      totalEnergy += lin;
-    }
     const safeTotalEnergy = totalEnergy + 1e-10;
 
     const subBass = this.analyzeFrequencyBand(spectrum, linearMagnitudes, 20, 60, sampleRate, fftSize, safeTotalEnergy);
@@ -974,16 +1012,19 @@ export class AudioAnalysisService {
 
   /**
    * Harmonic analysis.
+   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes and total energy.
    */
   private async analyzeHarmonics(
     audioBuffer: AudioBuffer,
-    channelData: Float32Array[],
-    spectrum: FrequencyBand[]
+    _channelData: Float32Array[],
+    spectrum: FrequencyBand[],
+    linearMagnitudes: Float32Array,
+    totalEnergy: number
   ): Promise<HarmonicAnalysis> {
     const fftSize = 8192;
     const fundamentalFreq = this.findFundamentalFrequency(spectrum, audioBuffer.sampleRate, fftSize);
     const harmonics = this.extractHarmonics(spectrum, fundamentalFreq, audioBuffer.sampleRate, fftSize);
-    const harmonicToNoiseRatio = this.calculateHNR(spectrum, harmonics);
+    const harmonicToNoiseRatio = this.calculateHNRFromLinear(linearMagnitudes, totalEnergy, harmonics);
     const thd = this.calculateTHD(harmonics);
 
     return {
@@ -1062,18 +1103,18 @@ export class AudioAnalysisService {
   }
 
   /**
-   * Calculate harmonic-to-noise ratio.
+   * Calculate harmonic-to-noise ratio using linear magnitudes.
+   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes to avoid O(M) Math.pow calls.
    */
-  private calculateHNR(spectrum: FrequencyBand[], harmonics: Harmonic[]): number {
+  private calculateHNRFromLinear(
+    linearMagnitudes: Float32Array,
+    totalEnergy: number,
+    harmonics: Harmonic[]
+  ): number {
     let harmonicEnergy = 0;
-    let totalEnergy = 0;
 
     for (const harmonic of harmonics) {
       harmonicEnergy += Math.pow(10, harmonic.magnitude / 20);
-    }
-
-    for (const band of spectrum) {
-      totalEnergy += Math.pow(10, band.magnitude / 20);
     }
 
     const noiseEnergy = totalEnergy - harmonicEnergy;
