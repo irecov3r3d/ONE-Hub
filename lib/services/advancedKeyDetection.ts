@@ -21,14 +21,20 @@ export class AdvancedKeyDetection {
   /**
    * Detect musical key using chromagram and template matching
    */
-  async detectKey(audioBuffer: AudioBuffer): Promise<{
+  async detectKey(
+    audioBuffer: AudioBuffer,
+    linearMagnitudes?: Float32Array
+  ): Promise<{
     key: string;
     scale: string;
     confidence: number;
     alternatives: Array<{ key: string; confidence: number }>;
   }> {
     // Calculate chromagram (pitch class distribution)
-    const chromagram = await this.calculateChromagram(audioBuffer);
+    // ⚡ Bolt: Reuse linear magnitudes if provided to avoid redundant FFT
+    const chromagram = linearMagnitudes
+      ? this.calculateChromagramFromMagnitudes(linearMagnitudes, audioBuffer.sampleRate)
+      : await this.calculateChromagram(audioBuffer);
 
     // Normalize chromagram
     const normalizedChroma = this.normalizeChromagram(chromagram);
@@ -69,6 +75,34 @@ export class AdvancedKeyDetection {
 
       const magnitude = Math.pow(10, bin.magnitude / 20);
       const pitchClass = this.frequencyToPitchClass(bin.frequency);
+
+      if (pitchClass !== -1) {
+        chromagram[pitchClass] += magnitude;
+      }
+    }
+
+    return chromagram;
+  }
+
+  /**
+   * ⚡ Bolt Optimization: Calculate chromagram from pre-calculated linear magnitudes.
+   * This eliminates a redundant 8192-point FFT and thousands of Math.pow calls.
+   */
+  private calculateChromagramFromMagnitudes(
+    linearMagnitudes: Float32Array,
+    sampleRate: number
+  ): number[] {
+    const chromagram = new Array(12).fill(0);
+    const fftSize = 8192;
+    const binFreqFactor = sampleRate / fftSize;
+
+    // Map frequencies to pitch classes
+    for (let i = 0; i < linearMagnitudes.length; i++) {
+      const freq = i * binFreqFactor;
+      if (freq < 80 || freq > 5000) continue;
+
+      const magnitude = linearMagnitudes[i];
+      const pitchClass = this.frequencyToPitchClass(freq);
 
       if (pitchClass !== -1) {
         chromagram[pitchClass] += magnitude;

@@ -63,8 +63,8 @@ These branches are unrelated to music production and clutter the Hub ecosystem.
 ### Browser Extensions
 - `claude/chrome-extension-replica-4L8Ec`
 - `claude/firefox-teach-repeat-extension-gRNKL`
-- `codex/create-gemini-sidebar-extension-replica*`
-- `feat/gemini-chrome-assistant-*`
+- `codex/create-gemini-sidebar-extension-replica-ajfz19`
+- `feat/gemini-chrome-assistant-9328924754254525612`
 
 ### System & AI Productivity Tools
 - `claude/keyboard-window-splitter-fCMem` (System utility)
@@ -72,7 +72,7 @@ These branches are unrelated to music production and clutter the Hub ecosystem.
 - `codex/create-gpt-studio-with-testing-tools` (Development tool)
 
 ### Standalone Apps & Research
-- `remotes/origin/LemmeGitDat...` (Community/Social app)
-- `codex/build-linux-mint-desktop-environment*` (OS customization)
+- `remotes/origin/LemmeGitDat--Modular-build-for-local-areas-to-track-through-community-whats-popping-near-them`
+- `codex/build-linux-mint-desktop-environment` (including `-xk8yme` and `-y2in6x` variants)
 - `codex/build-mvp-for-foodmarket-app` (E-commerce)
 - `codex/simulated-experiences-demographic-impact-review` (Research/Review tool)
