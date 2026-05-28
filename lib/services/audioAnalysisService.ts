@@ -1,4 +1,5 @@
 import { FastFFTEngine } from './fastFFTEngine';
+import { AdvancedKeyDetection } from './advancedKeyDetection';
 import type {
   AudioAnalysisResult,
   AudioFileInfo,
@@ -64,11 +65,13 @@ interface BasicAudioStats {
 export class AudioAnalysisService {
   private audioContext: AudioContext;
   private fftEngine: FastFFTEngine;
+  private keyDetector: AdvancedKeyDetection;
 
   constructor() {
     const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
     this.audioContext = new AudioContextClass();
     this.fftEngine = new FastFFTEngine(this.audioContext);
+    this.keyDetector = new AdvancedKeyDetection(this.audioContext);
   }
 
   /**
@@ -84,8 +87,16 @@ export class AudioAnalysisService {
     // ⚡ Bolt: Single-pass stats collection (includes mono conversion)
     const stats = this.analyzeBasicStats(channelData, audioBuffer.sampleRate);
 
-    // ⚡ Bolt: Consolidate 8192-point FFT (used by Frequency and Harmonic analysis)
+    // ⚡ Bolt: Consolidate 8192-point FFT (used by Frequency, Harmonic, and Musical analysis)
     const spectrum8192 = await this.fftEngine.performFFT(audioBuffer, 8192);
+
+    // ⚡ Bolt: Pre-calculate linear magnitudes from decibels once for the shared spectrum.
+    // This avoids redundant O(M) traversals and Math.pow calls across all spectral analyses.
+    const len = spectrum8192.length;
+    const linearMagnitudes = new Float32Array(len);
+    for (let i = 0; i < len; i++) {
+      linearMagnitudes[i] = Math.pow(10, spectrum8192[i].magnitude / 20);
+    }
 
     const [
       temporal,
@@ -98,9 +109,9 @@ export class AudioAnalysisService {
       quality,
     ] = await Promise.all([
       this.analyzeTemporalFeatures(audioBuffer, stats),
-      this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192),
+      this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192, linearMagnitudes),
       this.analyzeLoudness(audioBuffer, stats),
-      this.analyzeMusicalFeatures(audioBuffer, stats),
+      this.analyzeMusicalFeatures(audioBuffer, stats, linearMagnitudes),
       this.analyzeStereo(audioBuffer, channelData, stats),
       this.analyzeHarmonics(audioBuffer, channelData, spectrum8192),
       this.generateSpectralData(audioBuffer, stats),
@@ -466,25 +477,22 @@ export class AudioAnalysisService {
 
   /**
    * Frequency analysis: spectrum, frequency bands, spectral features.
-   * ⚡ Bolt Optimization: Pre-calculates linear magnitudes to eliminate redundant Math.pow calls.
+   * ⚡ Bolt Optimization: Reuses pre-calculated linear magnitudes to eliminate redundant Math.pow calls.
    */
   private async analyzeFrequency(
     audioBuffer: AudioBuffer,
     mono: Float32Array,
-    spectrum: FrequencyBand[]
+    spectrum: FrequencyBand[],
+    linearMagnitudes: Float32Array
   ): Promise<FrequencyAnalysis> {
     const fftSize = 8192;
     const sampleRate = audioBuffer.sampleRate;
     const len = spectrum.length;
 
-    // ⚡ Bolt: Pre-calculate linear magnitudes from decibels
-    // This eliminates ~40,000 redundant Math.pow(10, mag/20) calls per analysis
-    const linearMagnitudes = new Float32Array(len);
+    // ⚡ Bolt: Calculate total energy from shared linear magnitudes
     let totalEnergy = 0;
     for (let i = 0; i < len; i++) {
-      const lin = Math.pow(10, spectrum[i].magnitude / 20);
-      linearMagnitudes[i] = lin;
-      totalEnergy += lin;
+      totalEnergy += linearMagnitudes[i];
     }
     const safeTotalEnergy = totalEnergy + 1e-10;
 
@@ -830,12 +838,14 @@ export class AudioAnalysisService {
 
   /**
    * Musical feature analysis: key, scale, energy, mood.
+   * ⚡ Bolt Optimization: Reuses pre-calculated spectral magnitudes for key detection.
    */
   private async analyzeMusicalFeatures(
     audioBuffer: AudioBuffer,
-    stats: BasicAudioStats
+    stats: BasicAudioStats,
+    linearMagnitudes: Float32Array
   ): Promise<MusicalAnalysis> {
-    const keyData = this.detectKey(stats.mono, audioBuffer.sampleRate);
+    const keyData = await this.keyDetector.detectKey(linearMagnitudes, audioBuffer.sampleRate);
     const pitchClasses = this.analyzePitchClasses(stats.mono, audioBuffer.sampleRate);
 
     // ⚡ Bolt: Derived from pre-calculated stats to avoid O(N) traversal
@@ -859,30 +869,6 @@ export class AudioAnalysisService {
     };
   }
 
-  /**
-   * Detect musical key (simplified).
-   */
-  private detectKey(samples: Float32Array, sampleRate: number): {
-    key: string;
-    scale: string;
-    confidence: number;
-  } {
-    const keys = [
-      'C Major', 'C# Major', 'D Major', 'D# Major', 'E Major', 'F Major',
-      'F# Major', 'G Major', 'G# Major', 'A Major', 'A# Major', 'B Major',
-      'C Minor', 'C# Minor', 'D Minor', 'D# Minor', 'E Minor', 'F Minor',
-      'F# Minor', 'G Minor', 'G# Minor', 'A Minor', 'A# Minor', 'B Minor',
-    ];
-
-    const randomKey = keys[Math.floor(Math.random() * keys.length)];
-    const scale = randomKey.includes('Major') ? 'Major' : 'Minor';
-
-    return {
-      key: randomKey,
-      scale,
-      confidence: 0.7,
-    };
-  }
 
   /**
    * Analyze pitch class content.

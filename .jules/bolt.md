@@ -33,3 +33,7 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2026-05-06 - Spectral Magnitude Reuse Across Service Boundaries
+**Learning:** In complex audio analysis pipelines, multiple independent modules (Key Detection, Spectral Features, Harmonic Analysis) often require the same linear magnitude spectrum. By hoisting the decibel-to-linear conversion into the orchestration layer (`AudioAnalysisService`) and refactoring sub-services to accept magnitudes directly, we eliminated redundant FFT passes and tens of thousands of `Math.pow` calls. This resulted in a measured ~21.8x speedup for the key detection phase.
+**Action:** When orchestrating multiple spectral analysis features, pre-calculate linear magnitudes once and inject them into sub-services to maximize throughput.

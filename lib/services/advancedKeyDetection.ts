@@ -19,16 +19,26 @@ export class AdvancedKeyDetection {
   }
 
   /**
-   * Detect musical key using chromagram and template matching
+   * Detect musical key using chromagram and template matching.
+   * ⚡ Bolt Optimization: Supports detection from pre-calculated spectral magnitudes.
    */
-  async detectKey(audioBuffer: AudioBuffer): Promise<{
+  async detectKey(
+    audioBufferOrMagnitudes: AudioBuffer | Float32Array,
+    sampleRate?: number
+  ): Promise<{
     key: string;
     scale: string;
     confidence: number;
     alternatives: Array<{ key: string; confidence: number }>;
   }> {
-    // Calculate chromagram (pitch class distribution)
-    const chromagram = await this.calculateChromagram(audioBuffer);
+    let chromagram: number[];
+
+    if (audioBufferOrMagnitudes instanceof Float32Array) {
+      if (!sampleRate) throw new Error('sampleRate is required when passing spectral magnitudes');
+      chromagram = this.calculateChromagramFromMagnitudes(audioBufferOrMagnitudes, sampleRate);
+    } else {
+      chromagram = await this.calculateChromagram(audioBufferOrMagnitudes);
+    }
 
     // Normalize chromagram
     const normalizedChroma = this.normalizeChromagram(chromagram);
@@ -54,24 +64,44 @@ export class AdvancedKeyDetection {
   }
 
   /**
-   * Calculate chromagram (12-bin pitch class histogram)
+   * Calculate chromagram from an AudioBuffer.
    */
   private async calculateChromagram(audioBuffer: AudioBuffer): Promise<number[]> {
-    const chromagram = new Array(12).fill(0);
-
-    // Get frequency spectrum
     const spectrum = await this.fftEngine.performFFT(audioBuffer, 8192);
     const sampleRate = audioBuffer.sampleRate;
+    const fftSize = 8192;
+    const binFreqFactor = sampleRate / fftSize;
 
-    // Map frequencies to pitch classes
-    for (const bin of spectrum) {
-      if (bin.frequency < 80 || bin.frequency > 5000) continue;
+    const magnitudes = new Float32Array(spectrum.length);
+    for (let i = 0; i < spectrum.length; i++) {
+      magnitudes[i] = Math.pow(10, spectrum[i].magnitude / 20);
+    }
 
-      const magnitude = Math.pow(10, bin.magnitude / 20);
-      const pitchClass = this.frequencyToPitchClass(bin.frequency);
+    return this.calculateChromagramFromMagnitudes(magnitudes, sampleRate);
+  }
+
+  /**
+   * Calculate chromagram from pre-calculated spectral magnitudes.
+   * ⚡ Bolt Optimization: Avoids redundant FFT passes and decibel conversions.
+   */
+  private calculateChromagramFromMagnitudes(
+    magnitudes: Float32Array,
+    sampleRate: number
+  ): number[] {
+    const chromagram = new Array(12).fill(0);
+    const fftSize = magnitudes.length * 2;
+    const binFreqFactor = sampleRate / fftSize;
+
+    // Map frequencies to pitch classes (80Hz to 5kHz range)
+    const minBin = Math.floor((80 * fftSize) / sampleRate);
+    const maxBin = Math.floor((5000 * fftSize) / sampleRate);
+
+    for (let i = minBin; i < maxBin && i < magnitudes.length; i++) {
+      const freq = i * binFreqFactor;
+      const pitchClass = this.frequencyToPitchClass(freq);
 
       if (pitchClass !== -1) {
-        chromagram[pitchClass] += magnitude;
+        chromagram[pitchClass] += magnitudes[i];
       }
     }
 
