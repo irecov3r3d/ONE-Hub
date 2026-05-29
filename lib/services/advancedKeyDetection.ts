@@ -55,19 +55,21 @@ export class AdvancedKeyDetection {
 
   /**
    * Calculate chromagram (12-bin pitch class histogram)
+   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes.
    */
   private async calculateChromagram(audioBuffer: AudioBuffer): Promise<number[]> {
     const chromagram = new Array(12).fill(0);
 
     // Get frequency spectrum
-    const spectrum = await this.fftEngine.performFFT(audioBuffer, 8192);
+    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioBuffer, 8192);
     const sampleRate = audioBuffer.sampleRate;
 
     // Map frequencies to pitch classes
-    for (const bin of spectrum) {
+    for (let i = 0; i < spectrum.length; i++) {
+      const bin = spectrum[i];
       if (bin.frequency < 80 || bin.frequency > 5000) continue;
 
-      const magnitude = Math.pow(10, bin.magnitude / 20);
+      const magnitude = linearMagnitudes[i];
       const pitchClass = this.frequencyToPitchClass(bin.frequency);
 
       if (pitchClass !== -1) {
