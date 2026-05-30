@@ -20,15 +20,19 @@ export class AdvancedKeyDetection {
 
   /**
    * Detect musical key using chromagram and template matching
+   * ⚡ Bolt Optimization: Accepts pre-calculated linear magnitudes to bypass redundant FFT and Math.pow calls.
    */
-  async detectKey(audioBuffer: AudioBuffer): Promise<{
+  async detectKey(
+    audioBufferOrMagnitudes: AudioBuffer | Float32Array,
+    sampleRate?: number
+  ): Promise<{
     key: string;
     scale: string;
     confidence: number;
     alternatives: Array<{ key: string; confidence: number }>;
   }> {
     // Calculate chromagram (pitch class distribution)
-    const chromagram = await this.calculateChromagram(audioBuffer);
+    const chromagram = await this.calculateChromagram(audioBufferOrMagnitudes, sampleRate);
 
     // Normalize chromagram
     const normalizedChroma = this.normalizeChromagram(chromagram);
@@ -55,23 +59,48 @@ export class AdvancedKeyDetection {
 
   /**
    * Calculate chromagram (12-bin pitch class histogram)
+   * ⚡ Bolt Optimization: Bypass FFT and linear conversion if magnitudes are provided.
    */
-  private async calculateChromagram(audioBuffer: AudioBuffer): Promise<number[]> {
+  private async calculateChromagram(
+    audioBufferOrMagnitudes: AudioBuffer | Float32Array,
+    sampleRate?: number
+  ): Promise<number[]> {
     const chromagram = new Array(12).fill(0);
+    const fftSize = 8192;
 
-    // Get frequency spectrum
-    const spectrum = await this.fftEngine.performFFT(audioBuffer, 8192);
-    const sampleRate = audioBuffer.sampleRate;
+    if (audioBufferOrMagnitudes instanceof Float32Array) {
+      // ⚡ Bolt: Fast path using pre-calculated linear magnitudes
+      if (!sampleRate) throw new Error('sampleRate is required when providing magnitudes');
 
-    // Map frequencies to pitch classes
-    for (const bin of spectrum) {
-      if (bin.frequency < 80 || bin.frequency > 5000) continue;
+      const binFreqFactor = sampleRate / fftSize;
+      const len = audioBufferOrMagnitudes.length;
 
-      const magnitude = Math.pow(10, bin.magnitude / 20);
-      const pitchClass = this.frequencyToPitchClass(bin.frequency);
+      for (let i = 0; i < len; i++) {
+        const frequency = i * binFreqFactor;
+        if (frequency < 80 || frequency > 5000) continue;
 
-      if (pitchClass !== -1) {
-        chromagram[pitchClass] += magnitude;
+        const magnitude = audioBufferOrMagnitudes[i];
+        const pitchClass = this.frequencyToPitchClass(frequency);
+
+        if (pitchClass !== -1) {
+          chromagram[pitchClass] += magnitude;
+        }
+      }
+    } else {
+      // Legacy path with FFT
+      const spectrum = await this.fftEngine.performFFT(audioBufferOrMagnitudes, fftSize);
+      const sRate = audioBufferOrMagnitudes.sampleRate;
+
+      // Map frequencies to pitch classes
+      for (const bin of spectrum) {
+        if (bin.frequency < 80 || bin.frequency > 5000) continue;
+
+        const magnitude = Math.pow(10, bin.magnitude / 20);
+        const pitchClass = this.frequencyToPitchClass(bin.frequency);
+
+        if (pitchClass !== -1) {
+          chromagram[pitchClass] += magnitude;
+        }
       }
     }
 

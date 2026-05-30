@@ -1,4 +1,5 @@
 import { FastFFTEngine } from './fastFFTEngine';
+import { AdvancedKeyDetection } from './advancedKeyDetection';
 import type {
   AudioAnalysisResult,
   AudioFileInfo,
@@ -64,11 +65,13 @@ interface BasicAudioStats {
 export class AudioAnalysisService {
   private audioContext: AudioContext;
   private fftEngine: FastFFTEngine;
+  private keyDetector: AdvancedKeyDetection;
 
   constructor() {
     const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
     this.audioContext = new AudioContextClass();
     this.fftEngine = new FastFFTEngine(this.audioContext);
+    this.keyDetector = new AdvancedKeyDetection(this.audioContext);
   }
 
   /**
@@ -84,8 +87,19 @@ export class AudioAnalysisService {
     // ⚡ Bolt: Single-pass stats collection (includes mono conversion)
     const stats = this.analyzeBasicStats(channelData, audioBuffer.sampleRate);
 
-    // ⚡ Bolt: Consolidate 8192-point FFT (used by Frequency and Harmonic analysis)
+    // ⚡ Bolt: Consolidate 8192-point FFT (used by Frequency, Harmonic, and Key analysis)
     const spectrum8192 = await this.fftEngine.performFFT(audioBuffer, 8192);
+
+    // ⚡ Bolt: Pre-calculate linear magnitudes and total energy for the shared spectrum.
+    // This eliminates tens of thousands of Math.pow calls across downstream services.
+    const len = spectrum8192.length;
+    const linearMagnitudes = new Float32Array(len);
+    let totalSpectralEnergy = 0;
+    for (let i = 0; i < len; i++) {
+      const lin = Math.pow(10, spectrum8192[i].magnitude / 20);
+      linearMagnitudes[i] = lin;
+      totalSpectralEnergy += lin;
+    }
 
     const [
       temporal,
@@ -98,11 +112,11 @@ export class AudioAnalysisService {
       quality,
     ] = await Promise.all([
       this.analyzeTemporalFeatures(audioBuffer, stats),
-      this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192),
+      this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192, linearMagnitudes, totalSpectralEnergy),
       this.analyzeLoudness(audioBuffer, stats),
-      this.analyzeMusicalFeatures(audioBuffer, stats),
+      this.analyzeMusicalFeatures(audioBuffer, stats, linearMagnitudes),
       this.analyzeStereo(audioBuffer, channelData, stats),
-      this.analyzeHarmonics(audioBuffer, channelData, spectrum8192),
+      this.analyzeHarmonics(audioBuffer, channelData, spectrum8192, linearMagnitudes),
       this.generateSpectralData(audioBuffer, stats),
       this.analyzeQuality(audioBuffer, stats),
     ]);
@@ -156,8 +170,6 @@ export class AudioAnalysisService {
     let sumR = 0;
     let sumSqL = 0;
     let sumSqR = 0;
-    let sumSqMid = 0;
-    let sumSqSide = 0;
     let absSumL = 0;
     let absSumR = 0;
     let sumLR = 0;
@@ -201,17 +213,11 @@ export class AudioAnalysisService {
         sumLR += sL * sR;
       }
 
-      // Energy accumulation for RMS (Mid/Side corrected per ITU-R BS.1770)
+      // Energy accumulation for RMS
       const sqMono = sMono * sMono;
       sumSqL += sL * sL;
       if (hasRight) {
         sumSqR += sR * sR;
-        const mid = (sL + sR) / 2;
-        const side = (sL - sR) / 2;
-        sumSqMid += mid * mid;
-        sumSqSide += side * side;
-      } else {
-        sumSqMid += sqMono;
       }
 
       // 100ms Block Statistics
@@ -239,6 +245,23 @@ export class AudioAnalysisService {
 
     const safeLog10 = (val: number) => val > 0 ? 20 * Math.log10(val) : -100;
 
+    // ⚡ Bolt: Calculate Mid/Side energy using mathematical identities
+    // ∑ mid² = 0.25 * (∑ L² + ∑ R² + 2∑ LR)
+    // ∑ side² = 0.25 * (∑ L² + ∑ R² - 2∑ LR)
+    // This avoids arithmetic inside the hot O(N) loop.
+    let sumSqMid = 0;
+    let sumSqSide = 0;
+
+    if (hasRight) {
+      const sumPowers = sumSqL + sumSqR;
+      const doubleCorr = 2 * sumLR;
+      sumSqMid = 0.25 * (sumPowers + doubleCorr);
+      sumSqSide = 0.25 * (sumPowers - doubleCorr);
+    } else {
+      sumSqMid = sumSqL;
+      sumSqSide = 0;
+    }
+
     return {
       mono,
       peakL: safeLog10(peakL),
@@ -252,8 +275,8 @@ export class AudioAnalysisService {
       sumSqR: hasRight ? sumSqR : sumSqL,
       rmsL: safeLog10(Math.sqrt(sumSqL / length)),
       rmsR: hasRight ? safeLog10(Math.sqrt(sumSqR / length)) : safeLog10(Math.sqrt(sumSqL / length)),
-      rmsMid: hasRight ? safeLog10(Math.sqrt(sumSqMid / length)) : safeLog10(Math.sqrt(sumSqL / length)),
-      rmsSide: hasRight ? safeLog10(Math.sqrt(sumSqSide / length)) : -100,
+      rmsMid: safeLog10(Math.sqrt(Math.max(0, sumSqMid) / length)),
+      rmsSide: hasRight ? safeLog10(Math.sqrt(Math.max(0, sumSqSide) / length)) : -100,
       length,
       clippedSamples,
       totalSamples: length * numChannels,
@@ -466,26 +489,17 @@ export class AudioAnalysisService {
 
   /**
    * Frequency analysis: spectrum, frequency bands, spectral features.
-   * ⚡ Bolt Optimization: Pre-calculates linear magnitudes to eliminate redundant Math.pow calls.
+   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes to eliminate redundant Math.pow calls and traversals.
    */
   private async analyzeFrequency(
     audioBuffer: AudioBuffer,
     mono: Float32Array,
-    spectrum: FrequencyBand[]
+    spectrum: FrequencyBand[],
+    linearMagnitudes: Float32Array,
+    totalEnergy: number
   ): Promise<FrequencyAnalysis> {
     const fftSize = 8192;
     const sampleRate = audioBuffer.sampleRate;
-    const len = spectrum.length;
-
-    // ⚡ Bolt: Pre-calculate linear magnitudes from decibels
-    // This eliminates ~40,000 redundant Math.pow(10, mag/20) calls per analysis
-    const linearMagnitudes = new Float32Array(len);
-    let totalEnergy = 0;
-    for (let i = 0; i < len; i++) {
-      const lin = Math.pow(10, spectrum[i].magnitude / 20);
-      linearMagnitudes[i] = lin;
-      totalEnergy += lin;
-    }
     const safeTotalEnergy = totalEnergy + 1e-10;
 
     const subBass = this.analyzeFrequencyBand(spectrum, linearMagnitudes, 20, 60, sampleRate, fftSize, safeTotalEnergy);
@@ -830,12 +844,14 @@ export class AudioAnalysisService {
 
   /**
    * Musical feature analysis: key, scale, energy, mood.
+   * ⚡ Bolt Optimization: Uses real Krumhansl-Schmuckler key detection with pre-calculated magnitudes.
    */
   private async analyzeMusicalFeatures(
     audioBuffer: AudioBuffer,
-    stats: BasicAudioStats
+    stats: BasicAudioStats,
+    linearMagnitudes: Float32Array
   ): Promise<MusicalAnalysis> {
-    const keyData = this.detectKey(stats.mono, audioBuffer.sampleRate);
+    const keyData = await this.keyDetector.detectKey(linearMagnitudes, audioBuffer.sampleRate);
     const pitchClasses = this.analyzePitchClasses(stats.mono, audioBuffer.sampleRate);
 
     // ⚡ Bolt: Derived from pre-calculated stats to avoid O(N) traversal
@@ -862,27 +878,6 @@ export class AudioAnalysisService {
   /**
    * Detect musical key (simplified).
    */
-  private detectKey(samples: Float32Array, sampleRate: number): {
-    key: string;
-    scale: string;
-    confidence: number;
-  } {
-    const keys = [
-      'C Major', 'C# Major', 'D Major', 'D# Major', 'E Major', 'F Major',
-      'F# Major', 'G Major', 'G# Major', 'A Major', 'A# Major', 'B Major',
-      'C Minor', 'C# Minor', 'D Minor', 'D# Minor', 'E Minor', 'F Minor',
-      'F# Minor', 'G Minor', 'G# Minor', 'A Minor', 'A# Minor', 'B Minor',
-    ];
-
-    const randomKey = keys[Math.floor(Math.random() * keys.length)];
-    const scale = randomKey.includes('Major') ? 'Major' : 'Minor';
-
-    return {
-      key: randomKey,
-      scale,
-      confidence: 0.7,
-    };
-  }
 
   /**
    * Analyze pitch class content.
@@ -974,16 +969,18 @@ export class AudioAnalysisService {
 
   /**
    * Harmonic analysis.
+   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes.
    */
   private async analyzeHarmonics(
     audioBuffer: AudioBuffer,
     channelData: Float32Array[],
-    spectrum: FrequencyBand[]
+    spectrum: FrequencyBand[],
+    linearMagnitudes: Float32Array
   ): Promise<HarmonicAnalysis> {
     const fftSize = 8192;
     const fundamentalFreq = this.findFundamentalFrequency(spectrum, audioBuffer.sampleRate, fftSize);
     const harmonics = this.extractHarmonics(spectrum, fundamentalFreq, audioBuffer.sampleRate, fftSize);
-    const harmonicToNoiseRatio = this.calculateHNR(spectrum, harmonics);
+    const harmonicToNoiseRatio = this.calculateHNR(linearMagnitudes, harmonics);
     const thd = this.calculateTHD(harmonics);
 
     return {
@@ -1063,8 +1060,9 @@ export class AudioAnalysisService {
 
   /**
    * Calculate harmonic-to-noise ratio.
+   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes.
    */
-  private calculateHNR(spectrum: FrequencyBand[], harmonics: Harmonic[]): number {
+  private calculateHNR(linearMagnitudes: Float32Array, harmonics: Harmonic[]): number {
     let harmonicEnergy = 0;
     let totalEnergy = 0;
 
@@ -1072,8 +1070,8 @@ export class AudioAnalysisService {
       harmonicEnergy += Math.pow(10, harmonic.magnitude / 20);
     }
 
-    for (const band of spectrum) {
-      totalEnergy += Math.pow(10, band.magnitude / 20);
+    for (let i = 0; i < linearMagnitudes.length; i++) {
+      totalEnergy += linearMagnitudes[i];
     }
 
     const noiseEnergy = totalEnergy - harmonicEnergy;

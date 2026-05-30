@@ -33,3 +33,7 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2026-05-06 - Spectral Pipeline Synergy & Mid/Side Identity
+**Learning:** Multiple spectral analysis features (Frequency Bands, Harmonics, Key Detection) were performing redundant Decibel-to-Linear conversions and FFT passes. Hoisting linear magnitudes and total energy to a shared pipeline eliminates tens of thousands of `Math.pow` calls. Additionally, global Mid and Side energy can be derived using mathematical identities ($\sum mid^2 = 0.25 \times (\sum L^2 + \sum R^2 + 2\sum LR)$) outside the hot O(N) loop, significantly reducing arithmetic overhead for stereo analysis.
+**Action:** In multi-feature analysis pipelines, identify shared transformations (like spectral linear magnitudes) and lift them to the top-level service. Use mathematical identities to derive multi-channel metrics from global sums whenever possible.
