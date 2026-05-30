@@ -52,9 +52,14 @@ async function runBenchmark() {
     phase: Math.random() * Math.PI,
   }));
 
+  const linearMagnitudes = new Float32Array(spectrum.length);
+  for (let i = 0; i < spectrum.length; i++) {
+    linearMagnitudes[i] = Math.pow(10, spectrum[i].magnitude / 20);
+  }
+
   const startFreq = performance.now();
   // We call it multiple times to simulate the full analysis overhead
-  const freqAnalysis = await (service as any).analyzeFrequency(mockAudioBuffer, stats.mono, spectrum);
+  const freqAnalysis = await (service as any).analyzeFrequency(mockAudioBuffer, stats.mono, spectrum, linearMagnitudes);
   const endFreq = performance.now();
   console.log(`Duration: ${(endFreq - startFreq).toFixed(2)}ms for ${spectrum.length} bins`);
 

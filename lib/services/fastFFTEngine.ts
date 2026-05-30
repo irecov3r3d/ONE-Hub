@@ -14,53 +14,15 @@ export class FastFFTEngine {
   }
 
   /**
-   * Perform FFT using Web Audio API's AnalyserNode (100x faster than DFT)
+   * Perform FFT analysis on an AudioBuffer.
+   * ⚡ Bolt Optimization:
+   * 1. Removed unused Web Audio API objects (OfflineAudioContext, AnalyserNode) for static buffer analysis.
+   * 2. Returns linear magnitudes alongside dB spectrum to eliminate redundant downstream conversions.
    */
   async performFFT(
     audioBuffer: AudioBuffer,
     fftSize: number = 8192
-  ): Promise<FrequencyBand[]> {
-    // Create offline context for analysis
-    const offlineContext = new OfflineAudioContext(
-      audioBuffer.numberOfChannels,
-      audioBuffer.length,
-      audioBuffer.sampleRate
-    );
-
-    // Create analyser node
-    const analyser = offlineContext.createAnalyser();
-    analyser.fftSize = fftSize;
-    analyser.smoothingTimeConstant = 0;
-
-    // Create source
-    const source = offlineContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(analyser);
-    analyser.connect(offlineContext.destination);
-
-    // Start rendering
-    source.start(0);
-
-    // Get frequency data at multiple time points for better analysis
-    const numSamples = Math.min(10, Math.floor(audioBuffer.duration));
-    const interval = audioBuffer.duration / numSamples;
-
-    // For now, analyze middle of track
-    const frequencyData = new Float32Array(analyser.frequencyBinCount);
-    const timeData = new Float32Array(fftSize);
-
-    // Use ScriptProcessor to get frequency data (deprecated but still works)
-    // In production, use AudioWorklet
-    return this.analyzeWithScriptProcessor(audioBuffer, fftSize);
-  }
-
-  /**
-   * Analyze using direct buffer manipulation (fastest approach)
-   */
-  private analyzeWithScriptProcessor(
-    audioBuffer: AudioBuffer,
-    fftSize: number
-  ): FrequencyBand[] {
+  ): Promise<{ spectrum: FrequencyBand[]; linearMagnitudes: Float32Array }> {
     const sampleRate = audioBuffer.sampleRate;
     const channelData = audioBuffer.getChannelData(0);
 
@@ -78,15 +40,18 @@ export class FastFFTEngine {
     // Perform FFT using iterative Cooley-Tukey algorithm with fused windowing
     const fftResult = FastFFTEngine.cooleyTukeyFFT(paddedSamples, undefined, window);
 
-    // Convert to frequency bands
+    // Convert to frequency bands and collect linear magnitudes
     const spectrum: FrequencyBand[] = [];
-    for (let i = 0; i < fftResult.length / 2; i++) {
+    const linearMagnitudes = new Float32Array(fftSize / 2);
+
+    for (let i = 0; i < fftSize / 2; i++) {
       const real = fftResult[i * 2];
       const imag = fftResult[i * 2 + 1];
       const magnitude = Math.sqrt(real * real + imag * imag) / fftSize;
       const phase = Math.atan2(imag, real);
       const magnitudeDB = magnitude > 0 ? 20 * Math.log10(magnitude) : -100;
 
+      linearMagnitudes[i] = magnitude;
       spectrum.push({
         frequency: (i * sampleRate) / fftSize,
         magnitude: magnitudeDB,
@@ -94,7 +59,7 @@ export class FastFFTEngine {
       });
     }
 
-    return spectrum;
+    return { spectrum, linearMagnitudes };
   }
 
   /**
