@@ -46,14 +46,26 @@ These branches are essential to the mission of creating an integrated AI-driven 
 - `codex/organize-file-folders-neatly`
 - `monorepo-extraction-script-fix-*`
 
-## 🤝 Hub Synergy & Workflow
-The Song Generator Pro Hub operates as an integrated ecosystem where specialized services collaborate to take a musical idea from inception to presentation:
+## 🤝 Hub Synergy & Workflow: The Integrated Ecosystem
+The Song Generator Pro Hub operates as an integrated ecosystem where specialized services collaborate to take a musical idea from inception to presentation. Each category of branches represents a critical stage in the AI-driven production pipeline:
 
-1.  **Capture**: Organic ideas are captured via the **Voice Recorder** or rhythmic foundations are laid in the **Beat Maker**.
-2.  **Generation**: The **Core AI Ensemble** (main) uses these inputs to generate multi-instrumental compositions.
-3.  **Refinement**: Tracks are validated for quality by the **Audio Analysis Service** and polished using professional-grade tools in the **Audio Mastering Service**.
-4.  **Storage**: Finalized assets are archived and managed within the **Music Vault** for easy retrieval.
-5.  **Presentation**: The **Auto Video Splitter** generates synchronized visual content for social media and distribution.
+1.  **Capture (Organic Inputs)**:
+    - **Branches**: `voice-recorder-app`, `voice-control-studio`.
+    - **Role**: Captures raw melodic or rhythmic inspiration via high-fidelity mobile and web recording. These raw assets serve as the primary "seed" for the AI ensemble.
+2.  **Generation (Creative Core)**:
+    - **Branches**: `main`, `beat-maker-app`.
+    - **Role**: Transforms captured seeds into full multi-instrumental arrangements. The Beat Maker provides the rhythmic foundation, while the Core AI Ensemble generates harmonies, melodies, and lyrics.
+3.  **Refinement (Quality & Polish)**:
+    - **Branches**: `audio-analysis-mastering-tool`, `audio-analyzer-rms-optimization`.
+    - **Role**: The **Audio Analysis Service** performs deep forensic analysis (spectral, temporal, musical) to ensure the AI output meets professional standards. The **Audio Mastering Service** then applies in-place, high-performance signal processing (EQ, Compression, Limiting) to produce a "radio-ready" final mix.
+4.  **Storage (Asset Management)**:
+    - **Branches**: `music-vault-app`, `feature-save-to-library`.
+    - **Role**: Finalized assets are cataloged, versioned, and stored with their associated metadata (Key, BPM, Quality Score) for easy retrieval and distribution.
+5.  **Presentation (Visual Synthesis)**:
+    - **Branches**: `auto-split-video-clips`, `waveform-generation`.
+    - **Role**: Automatically generates visual assets, such as synchronized video clips and dynamic waveforms, optimized for social media engagement and professional portfolios.
+
+This collaborative synergy ensures that speed (Bolt) and quality (Claude/Codex) are maintained from the first recorded note to the final shared video.
 
 ---
 
