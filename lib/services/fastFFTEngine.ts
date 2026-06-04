@@ -14,21 +14,36 @@ export class FastFFTEngine {
   }
 
   /**
-   * Perform FFT analysis on an AudioBuffer.
+   * Perform FFT analysis on an AudioBuffer or raw Float32Array.
    * ⚡ Bolt Optimization:
-   * 1. Removed unused Web Audio API objects (OfflineAudioContext, AnalyserNode) for static buffer analysis.
-   * 2. Returns linear magnitudes alongside dB spectrum to eliminate redundant downstream conversions.
+   * 1. Supports polymorphic input (AudioBuffer or Float32Array) for zero-copy analysis of sub-segments.
+   * 2. Removed unused Web Audio API objects (OfflineAudioContext, AnalyserNode) for static buffer analysis.
+   * 3. Returns linear magnitudes alongside dB spectrum to eliminate redundant downstream conversions.
    */
   async performFFT(
-    audioBuffer: AudioBuffer,
-    fftSize: number = 8192
+    input: AudioBuffer | Float32Array,
+    fftSize: number = 8192,
+    sampleRate?: number
   ): Promise<{ spectrum: FrequencyBand[]; linearMagnitudes: Float32Array }> {
-    const sampleRate = audioBuffer.sampleRate;
-    const channelData = audioBuffer.getChannelData(0);
+    let channelData: Float32Array;
+    let sr: number;
 
-    // Use middle portion for analysis
-    const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
-    const samples = channelData.subarray(Math.max(0, startSample), Math.min(channelData.length, startSample + fftSize));
+    if (input instanceof AudioBuffer) {
+      channelData = input.getChannelData(0);
+      sr = input.sampleRate;
+    } else {
+      channelData = input;
+      sr = sampleRate || 44100;
+    }
+
+    // If input is exactly fftSize, use it directly. Otherwise, take middle portion or pad.
+    let samples: Float32Array;
+    if (channelData.length === fftSize) {
+      samples = channelData;
+    } else {
+      const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
+      samples = channelData.subarray(Math.max(0, startSample), Math.min(channelData.length, startSample + fftSize));
+    }
 
     // Pad with zeros if necessary to reach fftSize (must be power of 2)
     const paddedSamples = new Float32Array(fftSize);
@@ -53,7 +68,7 @@ export class FastFFTEngine {
 
       linearMagnitudes[i] = magnitude;
       spectrum.push({
-        frequency: (i * sampleRate) / fftSize,
+        frequency: (i * sr) / fftSize,
         magnitude: magnitudeDB,
         phase,
       });
