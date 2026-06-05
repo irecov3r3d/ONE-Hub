@@ -1,4 +1,5 @@
 import { FastFFTEngine } from './fastFFTEngine';
+import { AdvancedKeyDetection } from './advancedKeyDetection';
 import type {
   AudioAnalysisResult,
   AudioFileInfo,
@@ -64,11 +65,13 @@ interface BasicAudioStats {
 export class AudioAnalysisService {
   private audioContext: AudioContext;
   private fftEngine: FastFFTEngine;
+  private keyDetector: AdvancedKeyDetection;
 
   constructor() {
     const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
     this.audioContext = new AudioContextClass();
     this.fftEngine = new FastFFTEngine(this.audioContext);
+    this.keyDetector = new AdvancedKeyDetection(this.audioContext);
   }
 
   /**
@@ -101,7 +104,7 @@ export class AudioAnalysisService {
       this.analyzeTemporalFeatures(audioBuffer, stats),
       this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192, magnitudes8192),
       this.analyzeLoudness(audioBuffer, stats),
-      this.analyzeMusicalFeatures(audioBuffer, stats),
+      this.analyzeMusicalFeatures(audioBuffer, stats, magnitudes8192),
       this.analyzeStereo(audioBuffer, channelData, stats),
       this.analyzeHarmonics(audioBuffer, channelData, spectrum8192, magnitudes8192),
       this.generateSpectralData(audioBuffer, stats),
@@ -873,13 +876,21 @@ export class AudioAnalysisService {
 
   /**
    * Musical feature analysis: key, scale, energy, mood.
+   * ⚡ Bolt Optimization: Reuses pre-calculated 8192-point magnitudes for key detection.
    */
   private async analyzeMusicalFeatures(
     audioBuffer: AudioBuffer,
-    stats: BasicAudioStats
+    stats: BasicAudioStats,
+    magnitudes8192?: Float32Array
   ): Promise<MusicalAnalysis> {
-    const keyData = this.detectKey(stats.mono, audioBuffer.sampleRate);
-    const pitchClasses = this.analyzePitchClasses(stats.mono, audioBuffer.sampleRate);
+    const sampleRate = audioBuffer.sampleRate;
+
+    // Use optimized key detection with shared magnitudes if available
+    const keyData = magnitudes8192
+      ? this.keyDetector.detectKeyFromMagnitudes(magnitudes8192, sampleRate)
+      : this.detectKey(stats.mono, sampleRate);
+
+    const pitchClasses = this.analyzePitchClasses(stats.mono, sampleRate);
 
     // ⚡ Bolt: Derived from pre-calculated stats to avoid O(N) traversal
     const rms = Math.pow(10, stats.rmsMid / 20);
