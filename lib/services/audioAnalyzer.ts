@@ -20,10 +20,15 @@ export class AudioAnalyzer {
       // ⚡ Bolt: Single-pass stats collection
       const stats = this.analyzeBasicStats(audioBuffer);
 
+      // ⚡ Bolt: Consolidated FFT for spectral analysis
+      // Both clarity and balance use a 2048-point FFT of the middle segment.
+      // Lifting this out avoids redundant O(N log N) work and buffer copies.
+      const magnitudes2048 = this.performFFT(stats.mono, 2048, audioBuffer.sampleRate);
+
       // Calculate various metrics using pre-calculated stats
-      const spectralClarity = await this.calculateSpectralClarity(stats.mono, audioBuffer.sampleRate);
+      const spectralClarity = this.calculateSpectralClarity(magnitudes2048, audioBuffer.sampleRate);
       const dynamicRange = this.calculateDynamicRangeFromRMS(stats.windowRMS);
-      const frequencyBalance = this.calculateFrequencyBalance(stats.mono, audioBuffer.sampleRate);
+      const frequencyBalance = this.calculateFrequencyBalance(magnitudes2048, audioBuffer.sampleRate);
       const coherence = this.calculateCoherenceFromRMS(stats.windowRMS);
 
       // Calculate overall score
@@ -71,22 +76,28 @@ export class AudioAnalyzer {
    * Load audio file into AudioBuffer
    */
   private static async loadAudioBuffer(audioUrl: string): Promise<AudioBuffer> {
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+    const audioContext = new AudioContextClass();
 
-    const response = await fetch(audioUrl);
-    const arrayBuffer = await response.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-    return audioBuffer;
+    try {
+      const response = await fetch(audioUrl);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      return audioBuffer;
+    } finally {
+      // ⚡ Bolt: Close context to prevent resource leaks
+      if (audioContext.state !== 'closed') {
+        await audioContext.close();
+      }
+    }
   }
 
   /**
    * Calculate spectral clarity (high frequency content quality)
+   * ⚡ Bolt: Reuses pre-calculated magnitudes.
    */
-  private static async calculateSpectralClarity(mono: Float32Array, sampleRate: number): Promise<number> {
-    // Perform FFT analysis on a segment from the middle of the track
-    const fftSize = 2048;
-    const frequencyBins = this.performFFT(mono, fftSize, sampleRate);
+  private static calculateSpectralClarity(magnitudes: Float32Array, sampleRate: number): number {
+    const fftSize = magnitudes.length * 2;
 
     // Analyze high frequency content (4kHz - 20kHz)
     const hfStart = Math.floor((4000 / sampleRate) * fftSize);
@@ -95,8 +106,8 @@ export class AudioAnalyzer {
     let hfEnergy = 0;
     let totalEnergy = 0;
 
-    for (let i = 0; i < frequencyBins.length; i++) {
-      const energy = frequencyBins[i] * frequencyBins[i];
+    for (let i = 0; i < magnitudes.length; i++) {
+      const energy = magnitudes[i] * magnitudes[i];
       totalEnergy += energy;
       if (i >= hfStart && i < hfEnd) {
         hfEnergy += energy;
@@ -131,11 +142,10 @@ export class AudioAnalyzer {
 
   /**
    * Calculate frequency balance (how balanced the spectrum is)
+   * ⚡ Bolt: Reuses pre-calculated magnitudes.
    */
-  private static calculateFrequencyBalance(mono: Float32Array, sampleRate: number): number {
-    const fftSize = 2048;
-
-    const frequencyBins = this.performFFT(mono, fftSize, sampleRate);
+  private static calculateFrequencyBalance(magnitudes: Float32Array, sampleRate: number): number {
+    const fftSize = magnitudes.length * 2;
 
     // Divide spectrum into 3 bands: bass, mids, highs
     const bassEnd = Math.floor((250 / sampleRate) * fftSize);
@@ -145,8 +155,8 @@ export class AudioAnalyzer {
     let midEnergy = 0;
     let highEnergy = 0;
 
-    for (let i = 0; i < frequencyBins.length; i++) {
-      const energy = frequencyBins[i] * frequencyBins[i];
+    for (let i = 0; i < magnitudes.length; i++) {
+      const energy = magnitudes[i] * magnitudes[i];
       if (i < bassEnd) {
         bassEnergy += energy;
       } else if (i < midEnd) {
