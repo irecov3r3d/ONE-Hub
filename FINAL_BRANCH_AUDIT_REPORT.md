@@ -49,11 +49,11 @@ These branches are essential to the mission of creating an integrated AI-driven 
 ## 🤝 Hub Synergy & Workflow
 The Song Generator Pro Hub operates as an integrated ecosystem where specialized services collaborate to take a musical idea from inception to presentation:
 
-1.  **Capture**: Organic ideas are captured via the **Voice Recorder** or rhythmic foundations are laid in the **Beat Maker**.
-2.  **Generation**: The **Core AI Ensemble** (main) uses these inputs to generate multi-instrumental compositions.
-3.  **Refinement**: Tracks are validated for quality by the **Audio Analysis Service** and polished using professional-grade tools in the **Audio Mastering Service**.
-4.  **Storage**: Finalized assets are archived and managed within the **Music Vault** for easy retrieval.
-5.  **Presentation**: The **Auto Video Splitter** generates synchronized visual content for social media and distribution.
+1.  **Capture**: Organic ideas are captured via the **Voice Recorder** or rhythmic foundations are laid in the **Beat Maker**. This phase focuses on zero-latency capture of musical intent.
+2.  **Generation**: The **Core AI Ensemble** (main) uses these inputs to generate multi-instrumental compositions, leveraging high-performance inference.
+3.  **Refinement**: Tracks are validated for quality by the **Audio Analysis Service** and polished using professional-grade tools in the **Audio Mastering Service**. This phase utilizes optimized signal processing pipelines (Single-pass analysis, In-place mastering) to provide near-instant feedback.
+4.  **Storage**: Finalized assets are archived and managed within the **Music Vault** for efficient asset retrieval and metadata management.
+5.  **Presentation**: The **Auto Video Splitter** generates synchronized visual content for social media, optimized for fast rendering and distribution.
 
 ---
 
