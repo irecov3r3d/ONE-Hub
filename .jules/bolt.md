@@ -33,3 +33,11 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2026-05-06 - Zero-Copy Segment Analysis vs OfflineContext
+**Learning:** Extracting audio segments using `OfflineAudioContext` and `createBuffer` involves full buffer copies and Web Audio environment overhead. Using `Float32Array.subarray()` for sub-segment analysis provides a zero-copy view, reducing segment extraction time from milliseconds to nanoseconds and eliminating memory churn.
+**Action:** For analysis of sub-segments, always prefer `TypedArray.subarray()` over Web Audio API methods.
+
+## 2026-05-06 - Static Pitch Class Mapping
+**Learning:** Mapping FFT bins to musical pitch classes (Chromagram) involves expensive `Math.log2` and `Math.round` calls. By pre-calculating this mapping into a static `Int8Array` cache (keyed by fftSize and sampleRate), we eliminate thousands of math operations per analysis. Bins outside the useful range (e.g., <80Hz or >5kHz) can be mapped to -1 to further simplify the hot loop.
+**Action:** Cache non-linear mappings (like frequency to pitch class) before entering repetitive analysis loops.
