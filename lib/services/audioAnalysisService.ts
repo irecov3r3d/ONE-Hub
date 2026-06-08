@@ -86,7 +86,7 @@ export class AudioAnalysisService {
 
     // ⚡ Bolt: Consolidate 8192-point FFT (used by Frequency and Harmonic analysis)
     // Now returns pre-calculated linear magnitudes to eliminate O(M) downstream conversions.
-    const { spectrum: spectrum8192, linearMagnitudes: magnitudes8192 } = await this.fftEngine.performFFT(audioBuffer, 8192);
+    const { spectrum: spectrum8192, linearMagnitudes: magnitudes8192 } = await this.fftEngine.performFFT(audioBuffer, 8192, audioBuffer.sampleRate, false);
 
     const [
       temporal,
@@ -1155,7 +1155,7 @@ export class AudioAnalysisService {
     const sampleRate = audioBuffer.sampleRate;
 
     const spectrogram = await this.fftEngine.calculateSpectrogram(audioBuffer, fftSize, hopSize);
-    const { spectrum } = await this.fftEngine.performFFT(audioBuffer, fftSize);
+    const { spectrum } = await this.fftEngine.performFFT(audioBuffer, fftSize, audioBuffer.sampleRate, false);
 
     const frequencyBins = spectrum.map((band, i) => ({
       frequency: (i * sampleRate) / fftSize,

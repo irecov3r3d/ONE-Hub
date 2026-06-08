@@ -14,21 +14,54 @@ export class FastFFTEngine {
   }
 
   /**
-   * Perform FFT analysis on an AudioBuffer.
+   * Perform FFT analysis on an AudioBuffer or Float32Array.
    * ⚡ Bolt Optimization:
    * 1. Removed unused Web Audio API objects (OfflineAudioContext, AnalyserNode) for static buffer analysis.
    * 2. Returns linear magnitudes alongside dB spectrum to eliminate redundant downstream conversions.
+   * 3. Added support for raw Float32Array input to enable zero-copy sub-segment analysis.
    */
   async performFFT(
-    audioBuffer: AudioBuffer,
-    fftSize: number = 8192
-  ): Promise<{ spectrum: FrequencyBand[]; linearMagnitudes: Float32Array }> {
-    const sampleRate = audioBuffer.sampleRate;
-    const channelData = audioBuffer.getChannelData(0);
+    input: AudioBuffer | Float32Array,
+    fftSize: number,
+    sampleRate: number,
+    onlyMagnitudes: false
+  ): Promise<{ spectrum: FrequencyBand[]; linearMagnitudes: Float32Array }>;
+  async performFFT(
+    input: AudioBuffer | Float32Array,
+    fftSize: number,
+    sampleRate: number,
+    onlyMagnitudes: true
+  ): Promise<{ spectrum: undefined; linearMagnitudes: Float32Array }>;
+  async performFFT(
+    input: AudioBuffer | Float32Array,
+    fftSize?: number,
+    sampleRate?: number,
+    onlyMagnitudes?: boolean
+  ): Promise<{ spectrum?: FrequencyBand[]; linearMagnitudes: Float32Array }>;
+  async performFFT(
+    input: AudioBuffer | Float32Array,
+    fftSize: number = 8192,
+    sampleRate: number = 44100,
+    onlyMagnitudes: boolean = false
+  ): Promise<{ spectrum?: FrequencyBand[]; linearMagnitudes: Float32Array }> {
+    let actualSampleRate = sampleRate;
+    let channelData: Float32Array;
 
-    // Use middle portion for analysis
-    const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
-    const samples = channelData.subarray(Math.max(0, startSample), Math.min(channelData.length, startSample + fftSize));
+    if (input instanceof AudioBuffer) {
+      actualSampleRate = input.sampleRate;
+      channelData = input.getChannelData(0);
+    } else {
+      channelData = input;
+    }
+
+    // Use middle portion for analysis if the input is larger than fftSize
+    let samples: Float32Array;
+    if (channelData.length > fftSize) {
+      const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
+      samples = channelData.subarray(Math.max(0, startSample), Math.min(channelData.length, startSample + fftSize));
+    } else {
+      samples = channelData;
+    }
 
     // Pad with zeros if necessary to reach fftSize (must be power of 2)
     const paddedSamples = new Float32Array(fftSize);
@@ -40,23 +73,25 @@ export class FastFFTEngine {
     // Perform FFT using iterative Cooley-Tukey algorithm with fused windowing
     const fftResult = FastFFTEngine.cooleyTukeyFFT(paddedSamples, undefined, window);
 
-    // Convert to frequency bands and collect linear magnitudes
-    const spectrum: FrequencyBand[] = [];
+    // Collect linear magnitudes and optionally frequency bands
     const linearMagnitudes = new Float32Array(fftSize / 2);
+    const spectrum: FrequencyBand[] | undefined = onlyMagnitudes ? undefined : [];
 
     for (let i = 0; i < fftSize / 2; i++) {
       const real = fftResult[i * 2];
       const imag = fftResult[i * 2 + 1];
       const magnitude = Math.sqrt(real * real + imag * imag) / fftSize;
-      const phase = Math.atan2(imag, real);
-      const magnitudeDB = magnitude > 0 ? 20 * Math.log10(magnitude) : -100;
-
       linearMagnitudes[i] = magnitude;
-      spectrum.push({
-        frequency: (i * sampleRate) / fftSize,
-        magnitude: magnitudeDB,
-        phase,
-      });
+
+      if (spectrum) {
+        const phase = Math.atan2(imag, real);
+        const magnitudeDB = magnitude > 0 ? 20 * Math.log10(magnitude) : -100;
+        spectrum.push({
+          frequency: (i * actualSampleRate) / fftSize,
+          magnitude: magnitudeDB,
+          phase,
+        });
+      }
     }
 
     return { spectrum, linearMagnitudes };
