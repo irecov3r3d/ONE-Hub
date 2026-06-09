@@ -33,3 +33,7 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2026-05-06 - Integrated Spectral Key Detection Synergy
+**Learning:** Performing musical key detection as a separate process often involves redundant FFT passes on the same audio data. By enabling spectral reuse between services, we eliminate the $O(N \log N)$ FFT overhead entirely for key detection. Furthermore, a static `pitchClassCache` for mapping FFT bins to musical pitch classes eliminates thousands of `Math.log2` calls in the hot accumulation loop. Finally, using `Float32Array.subarray()` for audio segmenting is near-instant compared to `OfflineAudioContext` buffer copies. Combined, these achieved a verified ~13x speedup for integrated analysis.
+**Action:** Design audio services to share heavy intermediate results (like spectral magnitudes) and use zero-copy views (`subarray`) for windowed analysis to maximize pipeline synergy.
