@@ -33,3 +33,7 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2026-06-11 - Zero-Copy Chord Progression and Spectral Reuse
+**Learning:** Using `OfflineAudioContext` to extract audio segments for analysis creates massive overhead due to buffer copies and context initialization. Replacing it with `Float32Array.subarray()` and direct FFT calls on pre-allocated buffers is ~100x faster and reduces memory churn. Additionally, sharing FFT results (magnitudes) between services (e.g., `AudioAnalysisService` and `AdvancedKeyDetection`) eliminates redundant `O(N log N)` operations and thousands of `Math.pow` calls.
+**Action:** Avoid `OfflineAudioContext` for segment extraction in hot loops; use zero-copy typed array views and reuse spectral data across the analysis pipeline.
