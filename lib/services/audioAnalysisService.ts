@@ -1,4 +1,5 @@
 import { FastFFTEngine } from './fastFFTEngine';
+import { AdvancedKeyDetection } from './advancedKeyDetection';
 import type {
   AudioAnalysisResult,
   AudioFileInfo,
@@ -64,11 +65,13 @@ interface BasicAudioStats {
 export class AudioAnalysisService {
   private audioContext: AudioContext;
   private fftEngine: FastFFTEngine;
+  private keyDetector: AdvancedKeyDetection;
 
   constructor() {
     const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
     this.audioContext = new AudioContextClass();
     this.fftEngine = new FastFFTEngine(this.audioContext);
+    this.keyDetector = new AdvancedKeyDetection(this.audioContext);
   }
 
   /**
@@ -101,7 +104,7 @@ export class AudioAnalysisService {
       this.analyzeTemporalFeatures(audioBuffer, stats),
       this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192, magnitudes8192),
       this.analyzeLoudness(audioBuffer, stats),
-      this.analyzeMusicalFeatures(audioBuffer, stats),
+      this.analyzeMusicalFeatures(audioBuffer, stats, magnitudes8192),
       this.analyzeStereo(audioBuffer, channelData, stats),
       this.analyzeHarmonics(audioBuffer, channelData, spectrum8192, magnitudes8192),
       this.generateSpectralData(audioBuffer, stats),
@@ -873,12 +876,15 @@ export class AudioAnalysisService {
 
   /**
    * Musical feature analysis: key, scale, energy, mood.
+   * ⚡ Bolt Optimization: Uses pre-calculated spectral magnitudes for key detection.
    */
   private async analyzeMusicalFeatures(
     audioBuffer: AudioBuffer,
-    stats: BasicAudioStats
+    stats: BasicAudioStats,
+    magnitudes8192: Float32Array
   ): Promise<MusicalAnalysis> {
-    const keyData = this.detectKey(stats.mono, audioBuffer.sampleRate);
+    // ⚡ Bolt: Reuse spectral data for key detection (O(1) vs O(N log N))
+    const keyData = this.keyDetector.detectKeyFromMagnitudes(magnitudes8192, audioBuffer.sampleRate);
     const pitchClasses = this.analyzePitchClasses(stats.mono, audioBuffer.sampleRate);
 
     // ⚡ Bolt: Derived from pre-calculated stats to avoid O(N) traversal
@@ -902,30 +908,6 @@ export class AudioAnalysisService {
     };
   }
 
-  /**
-   * Detect musical key (simplified).
-   */
-  private detectKey(samples: Float32Array, sampleRate: number): {
-    key: string;
-    scale: string;
-    confidence: number;
-  } {
-    const keys = [
-      'C Major', 'C# Major', 'D Major', 'D# Major', 'E Major', 'F Major',
-      'F# Major', 'G Major', 'G# Major', 'A Major', 'A# Major', 'B Major',
-      'C Minor', 'C# Minor', 'D Minor', 'D# Minor', 'E Minor', 'F Minor',
-      'F# Minor', 'G Minor', 'G# Minor', 'A Minor', 'A# Minor', 'B Minor',
-    ];
-
-    const randomKey = keys[Math.floor(Math.random() * keys.length)];
-    const scale = randomKey.includes('Major') ? 'Major' : 'Minor';
-
-    return {
-      key: randomKey,
-      scale,
-      confidence: 0.7,
-    };
-  }
 
   /**
    * Analyze pitch class content.
