@@ -116,45 +116,75 @@ export default function WaveformEditor({ audioUrl, onSave }: WaveformEditorProps
     if (!ctx) return;
 
     const { width, height } = canvas;
-    const barWidth = width / waveformData.length;
+    const totalBars = waveformData.length;
+    const barWidth = width / totalBars;
 
     // Clear canvas
     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.fillRect(0, 0, width, height);
 
-    // Draw waveform bars
+    // ⚡ Bolt Optimization: Batch drawing by color groups to minimize state changes
+    // This reduces canvas fill calls from O(N) to O(1) per color group.
+    const colors = {
+      default: '#8b5cf6',
+      played: '#ec4899',
+      trimmed: 'rgba(139, 92, 246, 0.2)',
+      selected: '#10b981'
+    };
+
+    const paths: Record<keyof typeof colors, Path2D> = {
+      default: new Path2D(),
+      played: new Path2D(),
+      trimmed: new Path2D(),
+      selected: new Path2D()
+    };
+
+    // Pre-calculate boundary indices once to avoid redundant O(N) calculations in the loop
+    const currentTimeIdx = Math.floor((currentTime / (duration || 1)) * totalBars);
+    const trimStartIdx = Math.floor((trimStart / (duration || 1)) * totalBars);
+    const trimEndIdx = Math.floor((trimEnd / (duration || 1)) * totalBars);
+
+    let selStartIdx = -1;
+    let selEndIdx = -1;
+    if (selectedRegion) {
+      selStartIdx = Math.floor((selectedRegion.start / (duration || 1)) * totalBars);
+      selEndIdx = Math.floor((selectedRegion.end / (duration || 1)) * totalBars);
+    }
+
+    // Accumulate rectangles into color-specific paths
     waveformData.forEach((value, index) => {
       const barHeight = value * height * 0.8;
       const x = index * barWidth;
       const y = (height - barHeight) / 2;
+      const w = Math.max(0.5, barWidth - 1);
 
-      const progress = (index / waveformData.length) * duration;
+      let category: keyof typeof colors = 'default';
 
-      // Color based on state
-      let color = '#8b5cf6'; // Default purple
-
-      if (progress < trimStart || progress > trimEnd) {
-        color = 'rgba(139, 92, 246, 0.2)'; // Dimmed (trimmed region)
-      } else if (progress <= currentTime) {
-        color = '#ec4899'; // Pink (played region)
+      if (index >= selStartIdx && index <= selEndIdx) {
+        category = 'selected';
+      } else if (index < trimStartIdx || index > trimEndIdx) {
+        category = 'trimmed';
+      } else if (index <= currentTimeIdx) {
+        category = 'played';
       }
 
-      if (selectedRegion && progress >= selectedRegion.start && progress <= selectedRegion.end) {
-        color = '#10b981'; // Green (selected region)
-      }
+      paths[category].rect(x, y, w, barHeight);
+    });
 
-      ctx.fillStyle = color;
-      ctx.fillRect(x, y, barWidth - 1, barHeight);
+    // Draw all categories in batches
+    (Object.keys(colors) as Array<keyof typeof colors>).forEach(category => {
+      ctx.fillStyle = colors[category];
+      ctx.fill(paths[category]);
     });
 
     // Draw playhead
-    const playheadX = (currentTime / duration) * width;
+    const playheadX = (currentTime / (duration || 1)) * width;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(playheadX - 1, 0, 2, height);
 
     // Draw trim markers
-    const trimStartX = (trimStart / duration) * width;
-    const trimEndX = (trimEnd / duration) * width;
+    const trimStartX = (trimStart / (duration || 1)) * width;
+    const trimEndX = (trimEnd / (duration || 1)) * width;
 
     ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
     ctx.fillRect(0, 0, trimStartX, height);
