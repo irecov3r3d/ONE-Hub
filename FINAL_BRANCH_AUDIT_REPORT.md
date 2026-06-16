@@ -55,6 +55,13 @@ The Song Generator Pro Hub operates as an integrated ecosystem where specialized
 4.  **Storage**: Finalized assets are archived and managed within the **Music Vault** for easy retrieval.
 5.  **Presentation**: The **Auto Video Splitter** generates synchronized visual content for social media and distribution.
 
+### Functional Synergy & Data Flow
+The Hub's efficiency stems from the seamless handover of data between specialized branches:
+- **Capture ➡️ Generation**: Raw PCM data from the `voice-recorder` and MIDI-like patterns from the `beat-maker` serve as grounding for the `multi-model-service`.
+- **Generation ➡️ Refinement**: Generated `AudioBuffer` objects are passed directly to `AudioAnalysisService` for spectral validation.
+- **Refinement ➡️ Storage**: Mastered `Blob` assets are tagged with metadata derived during analysis (BPM, Key, Energy) and persisted in the `Music-Vault`.
+- **Storage ➡️ Presentation**: High-quality masters from the vault are used by the `Auto-Video-Splitter` to generate rhythmic visual clips, ensuring a consistent high-fidelity pipeline.
+
 ---
 
 ## 📦 Relocations (Move to separate repositories)
