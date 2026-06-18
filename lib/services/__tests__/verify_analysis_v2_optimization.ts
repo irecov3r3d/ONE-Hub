@@ -30,6 +30,7 @@ class MockAudioBuffer {
   copyToChannel(data: Float32Array, i: number) { this.channels[i].set(data); }
 }
 
+(globalThis as any).AudioBuffer = MockAudioBuffer;
 (globalThis as any).mockAudioBuffer = new MockAudioBuffer();
 
 async function runBenchmark() {

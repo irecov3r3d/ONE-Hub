@@ -17,6 +17,7 @@ The **Song Generator Pro Hub** is an integrated ecosystem designed to move from 
 
 ### 4. Presentation & Storage (The Vault)
 - **Music Vault** (`claude/music-vault-app-DNlEb`): Provides persistent storage and indexing for all generated and mastered tracks.
+- **Visual Assets** (`AlbumArtGenerator`, `WaveformEditor`): Creates professional branding and interactive displays for the musical content.
 - **Video Clips** (`claude/auto-split-video-clips-gwIQz`): Generates reactive visuals and waveforms for social media sharing, closing the loop between production and presentation.
 
 ## Synergistic Optimizations (Bolt's Role)
