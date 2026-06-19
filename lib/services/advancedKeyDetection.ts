@@ -13,9 +13,43 @@ const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 
 
 export class AdvancedKeyDetection {
   private fftEngine: FastFFTEngine;
+  private static pitchClassCache: Map<string, Int8Array> = new Map();
 
   constructor(audioContext: AudioContext) {
     this.fftEngine = new FastFFTEngine(audioContext);
+  }
+
+  /**
+   * Detect musical key using chromagram and template matching from raw magnitudes.
+   * ⚡ Bolt Optimization: Allows spectral reuse from AudioAnalysisService.
+   */
+  detectKeyFromMagnitudes(
+    magnitudes: Float32Array,
+    sampleRate: number,
+    fftSize: number
+  ): {
+    key: string;
+    scale: string;
+    confidence: number;
+    alternatives: Array<{ key: string; confidence: number }>;
+    chromagram: number[];
+  } {
+    const chromagram = this.calculateChromagramFromMagnitudes(magnitudes, sampleRate, fftSize);
+    const normalizedChroma = this.normalizeChromagram(chromagram);
+    const correlations = this.correlateWithKeyProfiles(normalizedChroma);
+    const bestMatch = correlations[0];
+    const alternatives = correlations.slice(1, 4).map(match => ({
+      key: match.key,
+      confidence: match.correlation,
+    }));
+
+    return {
+      key: bestMatch.key,
+      scale: bestMatch.scale,
+      confidence: bestMatch.correlation,
+      alternatives,
+      chromagram: normalizedChroma,
+    };
   }
 
   /**
@@ -55,25 +89,47 @@ export class AdvancedKeyDetection {
 
   /**
    * Calculate chromagram (12-bin pitch class histogram)
-   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes.
+   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes and cached pitch class mapping.
    */
-  private async calculateChromagram(audioBuffer: AudioBuffer): Promise<number[]> {
+  private async calculateChromagram(
+    audioBuffer: AudioBuffer,
+    fftSize: number = 8192
+  ): Promise<number[]> {
+    const { linearMagnitudes } = await this.fftEngine.performFFT(audioBuffer, fftSize);
+    return this.calculateChromagramFromMagnitudes(linearMagnitudes, audioBuffer.sampleRate, fftSize);
+  }
+
+  /**
+   * Calculate chromagram from pre-calculated magnitudes.
+   * ⚡ Bolt Optimization: Uses static pitchClassCache to eliminate Math.log2/Math.round in hot loop.
+   */
+  private calculateChromagramFromMagnitudes(
+    magnitudes: Float32Array,
+    sampleRate: number,
+    fftSize: number
+  ): number[] {
     const chromagram = new Array(12).fill(0);
+    const cacheKey = `${fftSize}-${sampleRate}`;
+    let pcMap = AdvancedKeyDetection.pitchClassCache.get(cacheKey);
 
-    // Get frequency spectrum
-    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioBuffer, 8192);
-    const sampleRate = audioBuffer.sampleRate;
+    if (!pcMap) {
+      pcMap = new Int8Array(magnitudes.length);
+      const binFreqFactor = sampleRate / fftSize;
+      for (let i = 0; i < magnitudes.length; i++) {
+        const freq = i * binFreqFactor;
+        if (freq < 80 || freq > 5000) {
+          pcMap[i] = -1;
+        } else {
+          pcMap[i] = this.frequencyToPitchClass(freq);
+        }
+      }
+      AdvancedKeyDetection.pitchClassCache.set(cacheKey, pcMap);
+    }
 
-    // Map frequencies to pitch classes
-    for (let i = 0; i < spectrum.length; i++) {
-      const bin = spectrum[i];
-      if (bin.frequency < 80 || bin.frequency > 5000) continue;
-
-      const magnitude = linearMagnitudes[i];
-      const pitchClass = this.frequencyToPitchClass(bin.frequency);
-
-      if (pitchClass !== -1) {
-        chromagram[pitchClass] += magnitude;
+    for (let i = 0; i < magnitudes.length; i++) {
+      const pc = pcMap[i];
+      if (pc !== -1) {
+        chromagram[pc] += magnitudes[i];
       }
     }
 
@@ -220,29 +276,32 @@ export class AdvancedKeyDetection {
 
   /**
    * Detect chord progressions (experimental)
+   * ⚡ Bolt Optimization: Uses zero-copy subarray for segments and optimized FFT.
+   * Eliminates O(N) AudioBuffer allocations and copies.
    */
   async detectChordProgression(
     audioBuffer: AudioBuffer,
     hopSize: number = 2  // seconds
   ): Promise<Array<{ time: number; chord: string; confidence: number }>> {
     const chords: Array<{ time: number; chord: string; confidence: number }> = [];
+    const channelData = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
+    const fftSize = 4096; // Smaller FFT for chord segments to improve temporal resolution
 
     // Analyze audio in segments
     const segments = Math.floor(audioBuffer.duration / hopSize);
 
     for (let i = 0; i < segments; i++) {
       const startTime = i * hopSize;
-      const endTime = Math.min((i + 1) * hopSize, audioBuffer.duration);
+      const startSample = Math.floor(startTime * sampleRate);
+      const endSample = Math.min(startSample + Math.floor(hopSize * sampleRate), channelData.length);
 
-      // Extract segment
-      const startSample = Math.floor(startTime * audioBuffer.sampleRate);
-      const endSample = Math.floor(endTime * audioBuffer.sampleRate);
-      const length = endSample - startSample;
+      // ⚡ Bolt: Zero-copy subarray for segment processing
+      const segment = channelData.subarray(startSample, endSample);
 
-      const segmentBuffer = this.extractSegment(audioBuffer, startSample, length);
-
-      // Detect key/chord for this segment
-      const keyData = await this.detectKey(segmentBuffer);
+      // Detect key/chord for this segment using optimized performFFT signature
+      const { linearMagnitudes } = await this.fftEngine.performFFT(segment, fftSize, sampleRate);
+      const keyData = this.detectKeyFromMagnitudes(linearMagnitudes, sampleRate, fftSize);
 
       chords.push({
         time: startTime,
@@ -252,38 +311,6 @@ export class AdvancedKeyDetection {
     }
 
     return chords;
-  }
-
-  /**
-   * Extract audio segment
-   */
-  private extractSegment(
-    audioBuffer: AudioBuffer,
-    startSample: number,
-    length: number
-  ): AudioBuffer {
-    const offlineContext = new OfflineAudioContext(
-      audioBuffer.numberOfChannels,
-      length,
-      audioBuffer.sampleRate
-    );
-
-    const newBuffer = offlineContext.createBuffer(
-      audioBuffer.numberOfChannels,
-      length,
-      audioBuffer.sampleRate
-    );
-
-    for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
-      const sourceData = audioBuffer.getChannelData(ch);
-      const targetData = newBuffer.getChannelData(ch);
-
-      for (let i = 0; i < length && startSample + i < sourceData.length; i++) {
-        targetData[i] = sourceData[startSample + i];
-      }
-    }
-
-    return newBuffer;
   }
 }
 
