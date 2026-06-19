@@ -14,25 +14,37 @@ export class FastFFTEngine {
   }
 
   /**
-   * Perform FFT analysis on an AudioBuffer.
+   * Perform FFT analysis on an AudioBuffer or raw Float32Array.
    * ⚡ Bolt Optimization:
-   * 1. Removed unused Web Audio API objects (OfflineAudioContext, AnalyserNode) for static buffer analysis.
+   * 1. Support for raw Float32Array input enables zero-copy analysis of sub-segments.
    * 2. Returns linear magnitudes alongside dB spectrum to eliminate redundant downstream conversions.
    */
   async performFFT(
-    audioBuffer: AudioBuffer,
-    fftSize: number = 8192
+    input: AudioBuffer | Float32Array,
+    fftSize: number = 8192,
+    sampleRateOverride?: number
   ): Promise<{ spectrum: FrequencyBand[]; linearMagnitudes: Float32Array }> {
-    const sampleRate = audioBuffer.sampleRate;
-    const channelData = audioBuffer.getChannelData(0);
+    let sampleRate: number;
+    let samples: Float32Array;
 
-    // Use middle portion for analysis
-    const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
-    const samples = channelData.subarray(Math.max(0, startSample), Math.min(channelData.length, startSample + fftSize));
+    if (input instanceof Float32Array) {
+      sampleRate = sampleRateOverride || 44100;
+      samples = input;
+    } else {
+      sampleRate = input.sampleRate;
+      const channelData = input.getChannelData(0);
+      // Use middle portion for analysis if the full buffer is passed
+      const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
+      samples = channelData.subarray(Math.max(0, startSample), Math.min(channelData.length, startSample + fftSize));
+    }
 
     // Pad with zeros if necessary to reach fftSize (must be power of 2)
     const paddedSamples = new Float32Array(fftSize);
-    paddedSamples.set(samples);
+    if (samples.length > fftSize) {
+      paddedSamples.set(samples.subarray(0, fftSize));
+    } else {
+      paddedSamples.set(samples);
+    }
 
     // Get window for fused application
     const window = FastFFTEngine.getHannWindow(fftSize);
