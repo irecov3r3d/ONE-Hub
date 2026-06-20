@@ -33,3 +33,7 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2024-05-22 - Zero-Copy Segment Analysis for Key/Chord Detection
+**Learning:** Extracting audio segments via `OfflineAudioContext` and new `AudioBuffer` allocations in a loop (e.g., for chord detection every 2 seconds) is extremely inefficient. By refactoring `FastFFTEngine` and `AdvancedKeyDetection` to support raw `Float32Array` inputs, we can use `subarray()` for zero-copy slicing. This reduced processing time for a 120s track from ~459ms to ~305ms (1.51x speedup).
+**Action:** For iterative segment analysis (chords, beats, etc.), avoid `AudioBuffer` copies and prefer `TypedArray.subarray()` to maintain high throughput and low memory pressure.
