@@ -14,25 +14,34 @@ export class FastFFTEngine {
   }
 
   /**
-   * Perform FFT analysis on an AudioBuffer.
+   * Perform FFT analysis on an AudioBuffer or raw samples.
    * ⚡ Bolt Optimization:
    * 1. Removed unused Web Audio API objects (OfflineAudioContext, AnalyserNode) for static buffer analysis.
    * 2. Returns linear magnitudes alongside dB spectrum to eliminate redundant downstream conversions.
+   * 3. Supports direct Float32Array input for zero-copy segment analysis.
    */
   async performFFT(
-    audioBuffer: AudioBuffer,
-    fftSize: number = 8192
+    input: AudioBuffer | Float32Array,
+    fftSize: number = 8192,
+    sampleRateOverride?: number
   ): Promise<{ spectrum: FrequencyBand[]; linearMagnitudes: Float32Array }> {
-    const sampleRate = audioBuffer.sampleRate;
-    const channelData = audioBuffer.getChannelData(0);
+    let samples: Float32Array;
+    let sampleRate: number;
 
-    // Use middle portion for analysis
-    const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
-    const samples = channelData.subarray(Math.max(0, startSample), Math.min(channelData.length, startSample + fftSize));
+    if (input instanceof Float32Array) {
+      samples = input;
+      sampleRate = sampleRateOverride || 44100;
+    } else {
+      sampleRate = input.sampleRate;
+      const channelData = input.getChannelData(0);
+      // Use middle portion for analysis when a full buffer is provided
+      const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
+      samples = channelData.subarray(Math.max(0, startSample), Math.min(channelData.length, startSample + fftSize));
+    }
 
     // Pad with zeros if necessary to reach fftSize (must be power of 2)
     const paddedSamples = new Float32Array(fftSize);
-    paddedSamples.set(samples);
+    paddedSamples.set(samples.subarray(0, fftSize));
 
     // Get window for fused application
     const window = FastFFTEngine.getHannWindow(fftSize);

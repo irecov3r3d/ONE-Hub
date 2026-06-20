@@ -21,14 +21,17 @@ export class AdvancedKeyDetection {
   /**
    * Detect musical key using chromagram and template matching
    */
-  async detectKey(audioBuffer: AudioBuffer): Promise<{
+  async detectKey(
+    input: AudioBuffer | Float32Array,
+    sampleRateOverride?: number
+  ): Promise<{
     key: string;
     scale: string;
     confidence: number;
     alternatives: Array<{ key: string; confidence: number }>;
   }> {
     // Calculate chromagram (pitch class distribution)
-    const chromagram = await this.calculateChromagram(audioBuffer);
+    const chromagram = await this.calculateChromagram(input, sampleRateOverride);
 
     // Normalize chromagram
     const normalizedChroma = this.normalizeChromagram(chromagram);
@@ -56,13 +59,17 @@ export class AdvancedKeyDetection {
   /**
    * Calculate chromagram (12-bin pitch class histogram)
    * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes.
+   * Supports zero-copy Float32Array input for segment analysis.
    */
-  private async calculateChromagram(audioBuffer: AudioBuffer): Promise<number[]> {
+  private async calculateChromagram(
+    input: AudioBuffer | Float32Array,
+    sampleRateOverride?: number
+  ): Promise<number[]> {
     const chromagram = new Array(12).fill(0);
 
     // Get frequency spectrum
-    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioBuffer, 8192);
-    const sampleRate = audioBuffer.sampleRate;
+    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(input, 8192, sampleRateOverride);
+    const sampleRate = input instanceof Float32Array ? (sampleRateOverride || 44100) : input.sampleRate;
 
     // Map frequencies to pitch classes
     for (let i = 0; i < spectrum.length; i++) {
@@ -220,6 +227,8 @@ export class AdvancedKeyDetection {
 
   /**
    * Detect chord progressions (experimental)
+   * ⚡ Bolt Optimization: Uses zero-copy Float32Array.subarray() for segments.
+   * Eliminates O(S) redundant AudioBuffer and OfflineAudioContext allocations.
    */
   async detectChordProgression(
     audioBuffer: AudioBuffer,
@@ -229,20 +238,20 @@ export class AdvancedKeyDetection {
 
     // Analyze audio in segments
     const segments = Math.floor(audioBuffer.duration / hopSize);
+    const channelData = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
 
     for (let i = 0; i < segments; i++) {
       const startTime = i * hopSize;
       const endTime = Math.min((i + 1) * hopSize, audioBuffer.duration);
 
-      // Extract segment
-      const startSample = Math.floor(startTime * audioBuffer.sampleRate);
-      const endSample = Math.floor(endTime * audioBuffer.sampleRate);
-      const length = endSample - startSample;
+      // ⚡ Bolt: Use .subarray() for zero-copy segment extraction
+      const startSample = Math.floor(startTime * sampleRate);
+      const endSample = Math.floor(endTime * sampleRate);
+      const segmentSamples = channelData.subarray(startSample, endSample);
 
-      const segmentBuffer = this.extractSegment(audioBuffer, startSample, length);
-
-      // Detect key/chord for this segment
-      const keyData = await this.detectKey(segmentBuffer);
+      // Detect key/chord for this segment using optimized samples path
+      const keyData = await this.detectKey(segmentSamples, sampleRate);
 
       chords.push({
         time: startTime,
@@ -252,38 +261,6 @@ export class AdvancedKeyDetection {
     }
 
     return chords;
-  }
-
-  /**
-   * Extract audio segment
-   */
-  private extractSegment(
-    audioBuffer: AudioBuffer,
-    startSample: number,
-    length: number
-  ): AudioBuffer {
-    const offlineContext = new OfflineAudioContext(
-      audioBuffer.numberOfChannels,
-      length,
-      audioBuffer.sampleRate
-    );
-
-    const newBuffer = offlineContext.createBuffer(
-      audioBuffer.numberOfChannels,
-      length,
-      audioBuffer.sampleRate
-    );
-
-    for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
-      const sourceData = audioBuffer.getChannelData(ch);
-      const targetData = newBuffer.getChannelData(ch);
-
-      for (let i = 0; i < length && startSample + i < sourceData.length; i++) {
-        targetData[i] = sourceData[startSample + i];
-      }
-    }
-
-    return newBuffer;
   }
 }
 
