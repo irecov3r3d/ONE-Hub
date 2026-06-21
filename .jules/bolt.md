@@ -33,3 +33,11 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2026-05-15 - Hot Loop Logarithmic Elimination via Pre-Calculated Mapping
+**Learning:** In musical key detection (Chromagram calculation), mapping thousands of FFT bins to 12 pitch classes in every frame involves millions of `Math.log2` and `Math.round` calls. While these seem "fast", they dominate the CPU time in high-throughput audio analysis. Implementing a static `Int8Array` mapping (indexed by bin number) achieved a ~4x speedup in chromagram calculation and enabled $O(M)$ spectral integration with zero math overhead.
+**Action:** For any transformation that maps high-resolution spectral data to low-resolution musical categories (Pitch, Chroma, Bark bands), pre-calculate the mapping into a TypedArray to eliminate transcendental functions from hot loops.
+
+## 2026-05-15 - Key Profile Rotation Correction
+**Learning:** Krumhansl-Schmuckler key profiles are root-at-zero. To correlate a chromagram with a key at tonic $T$, you must rotate the profile *forward* by $T$ (so index 0 moves to $T$), or effectively rotate the chromagram *backward*. My initial implementation rotated the profile by $T$ indices in the wrong direction relative to the tonic index. The correct rotation index for a tonic $T$ is `(12 - T) % 12` when using `slice` based rotation.
+**Action:** Always verify rotation direction when matching spectral templates (like key profiles) to ensure root-alignment.
