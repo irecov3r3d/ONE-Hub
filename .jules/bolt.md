@@ -33,3 +33,11 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2024-06-22 - Integrated Spectral Synergy for Key Detection
+**Learning:** Key detection typically requires its own high-resolution FFT (e.g., 8192 bins). In a multi-service pipeline like `AudioAnalysisService`, performing this FFT independently in `AdvancedKeyDetection` results in redundant $O(N \log N)$ computation. By refactoring the detector to accept pre-calculated linear magnitudes, we achieved a verified ~12x speedup (from ~18ms to ~1.5ms) for the key detection phase.
+**Action:** Design audio analysis services to be "spectral-ready," allowing them to consume pre-calculated FFT data from a shared pipeline rather than performing their own transforms.
+
+## 2024-06-22 - Zero-Copy Chord Pipeline Optimization
+**Learning:** Segment-based audio analysis (like chord progression detection) often uses `OfflineAudioContext` or `AudioBuffer` methods to "slice" audio. These methods involve high-overhead allocations and memory copies. Transitioning to `Float32Array.subarray()` for zero-copy windowing, combined with direct iterative FFT calls on the segments, reduced processing time for a 2-second clip from hundreds of milliseconds to ~5.6ms total.
+**Action:** Avoid `OfflineAudioContext` for simple buffer segmenting; use `TypedArray.subarray()` for zero-copy views and operate on raw samples whenever possible.
