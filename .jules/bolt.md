@@ -33,3 +33,7 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2026-05-06 - Zero-Copy Segment Analysis and Pitch Class Memoization
+**Learning:** Sub-segment audio analysis (like chord detection) often involves extracting portions of a large buffer. Using `OfflineAudioContext` or `AudioBuffer.copyFromChannel` to create new buffers for every segment (e.g., every 2 seconds of a 5-minute track) creates massive memory churn and GC pressure. Additionally, calculating `Math.log2` for pitch-class mapping in every FFT bin during chromagram generation is expensive in hot loops.
+**Action:** Use `Float32Array.subarray()` to create zero-copy views of audio segments, and memoize FFT bin-to-pitch-class mappings to eliminate logarithmic calculations in chromagram accumulation loops.
