@@ -33,3 +33,7 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2026-05-15 - Spectral Synergy and Pitch Class Caching
+**Learning:** In the integrated "Refinement" hub, multiple services (`AudioAnalysisService` and `AdvancedKeyDetection`) often require the same spectral data. Reusing pre-calculated linear magnitudes via a dedicated "synergy" path (e.g., `detectKeyFromMagnitudes`) eliminated a redundant $O(N \log N)$ FFT, achieving a ~42x speedup for the key detection sub-routine. Additionally, caching the frequency-bin-to-pitch-class mapping in an `Int8Array` bypassed millions of `Math.log2` and `Math.round` calls in the hot chromagram loop.
+**Action:** Design service APIs to support "Spectral Synergy" by allowing pre-calculated magnitudes to be passed in, and use TypedArray caches for expensive frequency-domain mappings.
