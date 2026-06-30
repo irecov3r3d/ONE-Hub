@@ -1,4 +1,5 @@
 import { FastFFTEngine } from './fastFFTEngine';
+import { AdvancedKeyDetection } from './advancedKeyDetection';
 import type {
   AudioAnalysisResult,
   AudioFileInfo,
@@ -64,11 +65,13 @@ interface BasicAudioStats {
 export class AudioAnalysisService {
   private audioContext: AudioContext;
   private fftEngine: FastFFTEngine;
+  private keyDetector: AdvancedKeyDetection;
 
   constructor() {
     const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
     this.audioContext = new AudioContextClass();
     this.fftEngine = new FastFFTEngine(this.audioContext);
+    this.keyDetector = new AdvancedKeyDetection(this.audioContext);
   }
 
   /**
@@ -101,7 +104,7 @@ export class AudioAnalysisService {
       this.analyzeTemporalFeatures(audioBuffer, stats),
       this.analyzeFrequency(audioBuffer, stats.mono, spectrum8192, magnitudes8192),
       this.analyzeLoudness(audioBuffer, stats),
-      this.analyzeMusicalFeatures(audioBuffer, stats),
+      this.analyzeMusicalFeatures(audioBuffer, stats, magnitudes8192),
       this.analyzeStereo(audioBuffer, channelData, stats),
       this.analyzeHarmonics(audioBuffer, channelData, spectrum8192, magnitudes8192),
       this.generateSpectralData(audioBuffer, stats),
@@ -873,13 +876,15 @@ export class AudioAnalysisService {
 
   /**
    * Musical feature analysis: key, scale, energy, mood.
+   * ⚡ Bolt Optimization: Reuses shared magnitudes for key and pitch detection.
    */
   private async analyzeMusicalFeatures(
     audioBuffer: AudioBuffer,
-    stats: BasicAudioStats
+    stats: BasicAudioStats,
+    magnitudes8192: Float32Array
   ): Promise<MusicalAnalysis> {
-    const keyData = this.detectKey(stats.mono, audioBuffer.sampleRate);
-    const pitchClasses = this.analyzePitchClasses(stats.mono, audioBuffer.sampleRate);
+    const keyData = this.detectKeyFromMagnitudes(magnitudes8192, audioBuffer.sampleRate);
+    const pitchClasses = this.analyzePitchClassesFromChroma(keyData.chromagram);
 
     // ⚡ Bolt: Derived from pre-calculated stats to avoid O(N) traversal
     const rms = Math.pow(10, stats.rmsMid / 20);
@@ -903,41 +908,32 @@ export class AudioAnalysisService {
   }
 
   /**
-   * Detect musical key (simplified).
+   * ⚡ Bolt Optimization: Detect musical key using pre-calculated magnitudes.
    */
-  private detectKey(samples: Float32Array, sampleRate: number): {
+  private detectKeyFromMagnitudes(magnitudes: Float32Array, sampleRate: number): {
     key: string;
     scale: string;
     confidence: number;
+    chromagram: number[];
   } {
-    const keys = [
-      'C Major', 'C# Major', 'D Major', 'D# Major', 'E Major', 'F Major',
-      'F# Major', 'G Major', 'G# Major', 'A Major', 'A# Major', 'B Major',
-      'C Minor', 'C# Minor', 'D Minor', 'D# Minor', 'E Minor', 'F Minor',
-      'F# Minor', 'G Minor', 'G# Minor', 'A Minor', 'A# Minor', 'B Minor',
-    ];
-
-    const randomKey = keys[Math.floor(Math.random() * keys.length)];
-    const scale = randomKey.includes('Major') ? 'Major' : 'Minor';
-
-    return {
-      key: randomKey,
-      scale,
-      confidence: 0.7,
-    };
+    return this.keyDetector.detectKeyFromMagnitudes(magnitudes, sampleRate);
   }
 
   /**
-   * Analyze pitch class content.
+   * ⚡ Bolt Optimization: Analyze pitch class content from pre-calculated chromagram.
    */
-  private analyzePitchClasses(samples: Float32Array, sampleRate: number): PitchClass[] {
+  private analyzePitchClassesFromChroma(chromagram: number[]): PitchClass[] {
     const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     const pitchClasses: PitchClass[] = [];
+
+    // Normalize chromagram for strength values
+    const sum = chromagram.reduce((a, b) => a + b, 0);
+    const invSum = sum > 0 ? 1 / sum : 1;
 
     for (let i = 0; i < 12; i++) {
       pitchClasses.push({
         note: notes[i],
-        strength: Math.random() * 0.8,
+        strength: chromagram[i] * invSum,
         frequency: 440 * Math.pow(2, (i - 9) / 12),
       });
     }
