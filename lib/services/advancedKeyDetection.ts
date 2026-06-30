@@ -26,10 +26,41 @@ export class AdvancedKeyDetection {
     scale: string;
     confidence: number;
     alternatives: Array<{ key: string; confidence: number }>;
+    chromagram: number[];
   }> {
     // Calculate chromagram (pitch class distribution)
     const chromagram = await this.calculateChromagram(audioBuffer);
+    return this.detectKeyFromChromagram(chromagram);
+  }
 
+  /**
+   * ⚡ Bolt Optimization: Detect key using pre-calculated linear magnitudes.
+   * This eliminates redundant FFT passes when integrated into a shared pipeline.
+   */
+  detectKeyFromMagnitudes(
+    magnitudes: Float32Array,
+    sampleRate: number
+  ): {
+    key: string;
+    scale: string;
+    confidence: number;
+    alternatives: Array<{ key: string; confidence: number }>;
+    chromagram: number[];
+  } {
+    const chromagram = this.calculateChromagramFromMagnitudes(magnitudes, sampleRate);
+    return this.detectKeyFromChromagram(chromagram);
+  }
+
+  /**
+   * Shared logic for key detection from a chromagram.
+   */
+  private detectKeyFromChromagram(chromagram: number[]): {
+    key: string;
+    scale: string;
+    confidence: number;
+    alternatives: Array<{ key: string; confidence: number }>;
+    chromagram: number[];
+  } {
     // Normalize chromagram
     const normalizedChroma = this.normalizeChromagram(chromagram);
 
@@ -50,27 +81,39 @@ export class AdvancedKeyDetection {
       scale: bestMatch.scale,
       confidence: bestMatch.correlation,
       alternatives,
+      chromagram,
     };
   }
 
   /**
    * Calculate chromagram (12-bin pitch class histogram)
-   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes.
    */
   private async calculateChromagram(audioBuffer: AudioBuffer): Promise<number[]> {
-    const chromagram = new Array(12).fill(0);
-
     // Get frequency spectrum
     const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioBuffer, 8192);
     const sampleRate = audioBuffer.sampleRate;
 
-    // Map frequencies to pitch classes
-    for (let i = 0; i < spectrum.length; i++) {
-      const bin = spectrum[i];
-      if (bin.frequency < 80 || bin.frequency > 5000) continue;
+    return this.calculateChromagramFromMagnitudes(linearMagnitudes, sampleRate);
+  }
 
-      const magnitude = linearMagnitudes[i];
-      const pitchClass = this.frequencyToPitchClass(bin.frequency);
+  /**
+   * ⚡ Bolt Optimization: Map magnitudes to chromagram in O(M).
+   */
+  private calculateChromagramFromMagnitudes(
+    magnitudes: Float32Array,
+    sampleRate: number
+  ): number[] {
+    const chromagram = new Array(12).fill(0);
+    const fftSize = (magnitudes.length - 1) * 2;
+    const binFreqFactor = sampleRate / fftSize;
+
+    // Map frequencies to pitch classes
+    for (let i = 0; i < magnitudes.length; i++) {
+      const frequency = i * binFreqFactor;
+      if (frequency < 80 || frequency > 5000) continue;
+
+      const magnitude = magnitudes[i];
+      const pitchClass = this.frequencyToPitchClass(frequency);
 
       if (pitchClass !== -1) {
         chromagram[pitchClass] += magnitude;
@@ -116,7 +159,8 @@ export class AdvancedKeyDetection {
 
     // Try all 12 major keys
     for (let tonic = 0; tonic < 12; tonic++) {
-      const rotatedProfile = this.rotateArray(KEY_PROFILES.major, tonic);
+      // ⚡ Bolt: Correctly rotate profile so its root (index 0) aligns with the tonic in the chromagram
+      const rotatedProfile = this.rotateArray(KEY_PROFILES.major, (12 - tonic) % 12);
       const correlation = this.pearsonCorrelation(chromagram, rotatedProfile);
 
       results.push({
@@ -128,7 +172,7 @@ export class AdvancedKeyDetection {
 
     // Try all 12 minor keys
     for (let tonic = 0; tonic < 12; tonic++) {
-      const rotatedProfile = this.rotateArray(KEY_PROFILES.minor, tonic);
+      const rotatedProfile = this.rotateArray(KEY_PROFILES.minor, (12 - tonic) % 12);
       const correlation = this.pearsonCorrelation(chromagram, rotatedProfile);
 
       results.push({
