@@ -33,3 +33,7 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2024-05-22 - Integrated Spectral Synergy
+**Learning:** Reusing pre-calculated FFT magnitudes for downstream musical analysis (Key, Pitch Classes) eliminates redundant O(N log N) calculations, achieving a ~17.6x speedup (from 23ms to 1.3ms). Additionally, switching from OfflineAudioContext segment extraction to zero-copy TypedArray subarrays for chord analysis reduced per-segment processing time by ~4x (from 3ms to 0.72ms).
+**Action:** Always design analytical services to support "data injection" of intermediate results (like spectral magnitudes) to maximize efficiency in integrated pipelines.
