@@ -13,6 +13,8 @@ const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 
 
 export class AdvancedKeyDetection {
   private fftEngine: FastFFTEngine;
+  // ⚡ Bolt: Cache pitch class mapping to avoid repeated log2 calls
+  private static pitchClassCache: Map<string, Int8Array> = new Map();
 
   constructor(audioContext: AudioContext) {
     this.fftEngine = new FastFFTEngine(audioContext);
@@ -21,14 +23,17 @@ export class AdvancedKeyDetection {
   /**
    * Detect musical key using chromagram and template matching
    */
-  async detectKey(audioBuffer: AudioBuffer): Promise<{
+  async detectKey(
+    input: AudioBuffer | Float32Array,
+    sampleRateOverride?: number
+  ): Promise<{
     key: string;
     scale: string;
     confidence: number;
     alternatives: Array<{ key: string; confidence: number }>;
   }> {
     // Calculate chromagram (pitch class distribution)
-    const chromagram = await this.calculateChromagram(audioBuffer);
+    const chromagram = await this.calculateChromagram(input, sampleRateOverride);
 
     // Normalize chromagram
     const normalizedChroma = this.normalizeChromagram(chromagram);
@@ -55,25 +60,41 @@ export class AdvancedKeyDetection {
 
   /**
    * Calculate chromagram (12-bin pitch class histogram)
-   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes.
+   * ⚡ Bolt Optimization: Uses static pitchClassCache to eliminate O(M) log2 calls.
    */
-  private async calculateChromagram(audioBuffer: AudioBuffer): Promise<number[]> {
+  private async calculateChromagram(
+    input: AudioBuffer | Float32Array,
+    sampleRateOverride?: number
+  ): Promise<number[]> {
     const chromagram = new Array(12).fill(0);
+    const fftSize = 8192;
 
     // Get frequency spectrum
-    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioBuffer, 8192);
-    const sampleRate = audioBuffer.sampleRate;
+    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(input, fftSize, sampleRateOverride);
+    const sampleRate = (input instanceof Float32Array) ? (sampleRateOverride || 44100) : input.sampleRate;
 
-    // Map frequencies to pitch classes
-    for (let i = 0; i < spectrum.length; i++) {
-      const bin = spectrum[i];
-      if (bin.frequency < 80 || bin.frequency > 5000) continue;
+    // ⚡ Bolt: Get or create pitch class cache for this specific FFT size and sample rate
+    const cacheKey = `${fftSize}-${sampleRate}`;
+    let pcc = AdvancedKeyDetection.pitchClassCache.get(cacheKey);
 
-      const magnitude = linearMagnitudes[i];
-      const pitchClass = this.frequencyToPitchClass(bin.frequency);
+    if (!pcc) {
+      pcc = new Int8Array(spectrum.length);
+      for (let i = 0; i < spectrum.length; i++) {
+        const freq = spectrum[i].frequency;
+        if (freq < 80 || freq > 5000) {
+          pcc[i] = -1;
+        } else {
+          pcc[i] = this.frequencyToPitchClass(freq);
+        }
+      }
+      AdvancedKeyDetection.pitchClassCache.set(cacheKey, pcc);
+    }
 
-      if (pitchClass !== -1) {
-        chromagram[pitchClass] += magnitude;
+    // Map frequencies to pitch classes using cache
+    for (let i = 0; i < linearMagnitudes.length; i++) {
+      const pc = pcc[i];
+      if (pc !== -1) {
+        chromagram[pc] += linearMagnitudes[i];
       }
     }
 
@@ -116,7 +137,10 @@ export class AdvancedKeyDetection {
 
     // Try all 12 major keys
     for (let tonic = 0; tonic < 12; tonic++) {
-      const rotatedProfile = this.rotateArray(KEY_PROFILES.major, tonic);
+      // ⚡ Bolt Fix: Krumhansl-Schmuckler profiles are fixed.
+      // To match them against a chromagram, we must rotate the profile
+      // by (12 - tonic) % 12 to align C (index 0) with the target tonic.
+      const rotatedProfile = this.rotateArray(KEY_PROFILES.major, (12 - tonic) % 12);
       const correlation = this.pearsonCorrelation(chromagram, rotatedProfile);
 
       results.push({
@@ -128,7 +152,7 @@ export class AdvancedKeyDetection {
 
     // Try all 12 minor keys
     for (let tonic = 0; tonic < 12; tonic++) {
-      const rotatedProfile = this.rotateArray(KEY_PROFILES.minor, tonic);
+      const rotatedProfile = this.rotateArray(KEY_PROFILES.minor, (12 - tonic) % 12);
       const correlation = this.pearsonCorrelation(chromagram, rotatedProfile);
 
       results.push({
@@ -220,34 +244,60 @@ export class AdvancedKeyDetection {
 
   /**
    * Detect chord progressions (experimental)
+   * ⚡ Bolt Optimization:
+   * 1. Uses zero-copy Float32Array.subarray() instead of OfflineAudioContext/AudioBuffer.
+   * 2. Implements multi-window averaging per segment (50% overlap) for significantly improved stability.
    */
   async detectChordProgression(
     audioBuffer: AudioBuffer,
     hopSize: number = 2  // seconds
   ): Promise<Array<{ time: number; chord: string; confidence: number }>> {
     const chords: Array<{ time: number; chord: string; confidence: number }> = [];
+    const channelData = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
 
     // Analyze audio in segments
     const segments = Math.floor(audioBuffer.duration / hopSize);
+    const windowSize = 4096;
+    const overlap = windowSize / 2;
 
     for (let i = 0; i < segments; i++) {
       const startTime = i * hopSize;
-      const endTime = Math.min((i + 1) * hopSize, audioBuffer.duration);
+      const startSample = Math.floor(startTime * sampleRate);
+      const endSample = Math.floor(Math.min(startTime + hopSize, audioBuffer.duration) * sampleRate);
 
-      // Extract segment
-      const startSample = Math.floor(startTime * audioBuffer.sampleRate);
-      const endSample = Math.floor(endTime * audioBuffer.sampleRate);
-      const length = endSample - startSample;
+      // ⚡ Bolt: Accumulate chromagrams from multiple overlapping windows in the segment
+      const segmentChroma = new Array(12).fill(0);
+      let windowCount = 0;
 
-      const segmentBuffer = this.extractSegment(audioBuffer, startSample, length);
+      for (let s = startSample; s + windowSize <= endSample; s += overlap) {
+        const windowData = channelData.subarray(s, s + windowSize);
+        const windowChroma = await this.calculateChromagram(windowData, sampleRate);
 
-      // Detect key/chord for this segment
-      const keyData = await this.detectKey(segmentBuffer);
+        for (let c = 0; c < 12; c++) {
+          segmentChroma[c] += windowChroma[c];
+        }
+        windowCount++;
+      }
+
+      // If segment is too short for even one window, use the whole segment
+      if (windowCount === 0) {
+        const windowChroma = await this.calculateChromagram(channelData.subarray(startSample, endSample), sampleRate);
+        for (let c = 0; c < 12; c++) segmentChroma[c] = windowChroma[c];
+        windowCount = 1;
+      }
+
+      // Normalize averaged chromagram
+      const avgChroma = this.normalizeChromagram(segmentChroma);
+
+      // Correlate with key profiles
+      const correlations = this.correlateWithKeyProfiles(avgChroma);
+      const bestMatch = correlations[0];
 
       chords.push({
         time: startTime,
-        chord: keyData.key.replace(' Major', '').replace(' Minor', 'm'),
-        confidence: keyData.confidence,
+        chord: bestMatch.key.replace(' Major', '').replace(' Minor', 'm'),
+        confidence: bestMatch.correlation,
       });
     }
 
