@@ -14,25 +14,38 @@ export class FastFFTEngine {
   }
 
   /**
-   * Perform FFT analysis on an AudioBuffer.
+   * Perform FFT analysis on an AudioBuffer or Float32Array.
    * ⚡ Bolt Optimization:
-   * 1. Removed unused Web Audio API objects (OfflineAudioContext, AnalyserNode) for static buffer analysis.
-   * 2. Returns linear magnitudes alongside dB spectrum to eliminate redundant downstream conversions.
+   * 1. Polymorphic input: handles both AudioBuffer and raw Float32Array.
+   * 2. Zero-copy path: uses subarrays to avoid allocations when possible.
+   * 3. Returns linear magnitudes to eliminate O(M) downstream conversions.
    */
   async performFFT(
-    audioBuffer: AudioBuffer,
-    fftSize: number = 8192
+    input: AudioBuffer | Float32Array,
+    fftSize: number = 8192,
+    sampleRateOverride?: number
   ): Promise<{ spectrum: FrequencyBand[]; linearMagnitudes: Float32Array }> {
-    const sampleRate = audioBuffer.sampleRate;
-    const channelData = audioBuffer.getChannelData(0);
+    let samples: Float32Array;
+    let sampleRate: number;
 
-    // Use middle portion for analysis
-    const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
-    const samples = channelData.subarray(Math.max(0, startSample), Math.min(channelData.length, startSample + fftSize));
+    if (input instanceof AudioBuffer) {
+      sampleRate = input.sampleRate;
+      const channelData = input.getChannelData(0);
+      // Use middle portion for full buffers, or the whole buffer if it's small (e.g. a segment)
+      if (channelData.length > fftSize * 2) {
+        const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
+        samples = channelData.subarray(startSample, startSample + fftSize);
+      } else {
+        samples = channelData;
+      }
+    } else {
+      sampleRate = sampleRateOverride || 44100;
+      samples = input;
+    }
 
     // Pad with zeros if necessary to reach fftSize (must be power of 2)
     const paddedSamples = new Float32Array(fftSize);
-    paddedSamples.set(samples);
+    paddedSamples.set(samples.subarray(0, Math.min(samples.length, fftSize)));
 
     // Get window for fused application
     const window = FastFFTEngine.getHannWindow(fftSize);
