@@ -47,8 +47,16 @@ These branches are essential to the mission of creating an integrated AI-driven 
 - `monorepo-extraction-script-fix-*`
 
 ## 🤝 Hub Synergy & Workflow
-The Song Generator Pro Hub operates as an integrated ecosystem where specialized services collaborate to take a musical idea from inception to presentation:
+The Song Generator Pro Hub operates as an integrated ecosystem where specialized services collaborate to take a musical idea from inception to presentation. Each phase is represented by core branches that share data and logic:
 
+### Functional Synergy
+*   **Capture (Foundation)**: `voice-recorder` and `beat-maker` provide the raw audio and rhythmic data.
+*   **Generation (Engine)**: `song-generator` consumes captured foundations to produce full arrangements, utilizing `FastFFTEngine` for real-time preview analysis.
+*   **Refinement (Studio)**: The `audio-analysis-service` performs deep inspection of generated tracks, providing metadata (Key, BPM, Loudness) to the `audio-mastering-service`. The mastering service uses these metrics to dynamically adjust EQ, Compression, and Limiting parameters.
+*   **Storage (Vault)**: `music-vault` manages the lifecycle of these assets, ensuring that analysis metadata and mastering presets are persisted alongside the audio.
+*   **Presentation (Output)**: `video-clips` uses the transient and section data from the `audio-analysis-service` to perform beat-accurate visual cuts.
+
+### Pipeline Flow
 1.  **Capture**: Organic ideas are captured via the **Voice Recorder** or rhythmic foundations are laid in the **Beat Maker**.
 2.  **Generation**: The **Core AI Ensemble** (main) uses these inputs to generate multi-instrumental compositions.
 3.  **Refinement**: Tracks are validated for quality by the **Audio Analysis Service** and polished using professional-grade tools in the **Audio Mastering Service**.
