@@ -33,3 +33,11 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2026-05-06 - Cross-Service Spectral Synergy
+**Learning:** In integrated audio pipelines, different services often require the same spectral data at different resolutions or for different purposes (e.g., Quality Analysis vs. Musical Feature Detection). Passing pre-calculated FFT magnitudes from a high-resolution analysis (8192-point) directly to downstream services allows O(1) integration of expensive musical features like Key Detection.
+**Action:** Design audio services to accept polymorphic inputs (raw buffers vs. pre-calculated spectra) to enable data reuse across the pipeline.
+
+## 2026-05-07 - Pitch-Class Mapping Cache
+**Learning:** Chromagram calculations involve mapping thousands of FFT bins to 12 pitch classes using `Math.log2`. For a 120s track with 2s segments, this happens millions of times. A static `Int8Array` cache keyed by (sampleRate, fftSize) allows replacing these expensive math calls and range checks with a simple O(1) array lookup.
+**Action:** For iterative analysis on static signals, pre-calculate and cache frequency-to-domain mappings (like pitch classes or bark scales) to eliminate redundant transcendental math in hot loops.
