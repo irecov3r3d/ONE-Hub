@@ -20,11 +20,17 @@ export class FastFFTEngine {
    * 2. Returns linear magnitudes alongside dB spectrum to eliminate redundant downstream conversions.
    */
   async performFFT(
-    audioBuffer: AudioBuffer,
-    fftSize: number = 8192
+    audioData: AudioBuffer | Float32Array,
+    fftSize: number = 8192,
+    sampleRateOverride?: number
   ): Promise<{ spectrum: FrequencyBand[]; linearMagnitudes: Float32Array }> {
-    const sampleRate = audioBuffer.sampleRate;
-    const channelData = audioBuffer.getChannelData(0);
+    const isFloat32 = audioData instanceof Float32Array;
+    const sampleRate = isFloat32
+      ? (sampleRateOverride || 44100)
+      : audioData.sampleRate;
+    const channelData = isFloat32
+      ? audioData
+      : audioData.getChannelData(0);
 
     // Use middle portion for analysis
     const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);

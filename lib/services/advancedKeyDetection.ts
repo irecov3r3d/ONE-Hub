@@ -13,22 +13,52 @@ const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 
 
 export class AdvancedKeyDetection {
   private fftEngine: FastFFTEngine;
+  private static pitchClassCache: Map<string, Int8Array> = new Map();
 
   constructor(audioContext: AudioContext) {
     this.fftEngine = new FastFFTEngine(audioContext);
   }
 
   /**
+   * Map frequencies to pitch classes and cache the indices.
+   * ⚡ Bolt Optimization: Pre-calculates bin-to-pitch mappings to skip Math.log2 in hot loops.
+   */
+  private getPitchClassMap(fftSize: number, sampleRate: number): Int8Array {
+    const key = `${fftSize}_${sampleRate}`;
+    let cache = AdvancedKeyDetection.pitchClassCache.get(key);
+    if (!cache) {
+      const len = fftSize / 2;
+      cache = new Int8Array(len);
+      const binFreqFactor = sampleRate / fftSize;
+      for (let i = 0; i < len; i++) {
+        const freq = i * binFreqFactor;
+        if (freq < 80 || freq > 5000) {
+          cache[i] = -1;
+        } else {
+          const midiNote = 69 + 12 * Math.log2(freq / 440);
+          const pitchClass = Math.round(midiNote) % 12;
+          cache[i] = (pitchClass < 0) ? (pitchClass + 12) % 12 : pitchClass;
+        }
+      }
+      AdvancedKeyDetection.pitchClassCache.set(key, cache);
+    }
+    return cache;
+  }
+
+  /**
    * Detect musical key using chromagram and template matching
    */
-  async detectKey(audioBuffer: AudioBuffer): Promise<{
+  async detectKey(
+    audioData: AudioBuffer | Float32Array,
+    sampleRateOverride?: number
+  ): Promise<{
     key: string;
     scale: string;
     confidence: number;
     alternatives: Array<{ key: string; confidence: number }>;
   }> {
     // Calculate chromagram (pitch class distribution)
-    const chromagram = await this.calculateChromagram(audioBuffer);
+    const chromagram = await this.calculateChromagram(audioData, sampleRateOverride);
 
     // Normalize chromagram
     const normalizedChroma = this.normalizeChromagram(chromagram);
@@ -55,25 +85,30 @@ export class AdvancedKeyDetection {
 
   /**
    * Calculate chromagram (12-bin pitch class histogram)
-   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes.
+   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes and static pitch class caching.
    */
-  private async calculateChromagram(audioBuffer: AudioBuffer): Promise<number[]> {
+  private async calculateChromagram(
+    audioData: AudioBuffer | Float32Array,
+    sampleRateOverride?: number
+  ): Promise<number[]> {
     const chromagram = new Array(12).fill(0);
 
+    const sampleRate = (audioData instanceof Float32Array)
+      ? (sampleRateOverride || 44100)
+      : audioData.sampleRate;
+
     // Get frequency spectrum
-    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioBuffer, 8192);
-    const sampleRate = audioBuffer.sampleRate;
+    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioData, 8192, sampleRate);
 
-    // Map frequencies to pitch classes
-    for (let i = 0; i < spectrum.length; i++) {
-      const bin = spectrum[i];
-      if (bin.frequency < 80 || bin.frequency > 5000) continue;
+    const len = linearMagnitudes.length;
+    const fftSize = len * 2;
+    const pitchClassMap = this.getPitchClassMap(fftSize, sampleRate);
 
-      const magnitude = linearMagnitudes[i];
-      const pitchClass = this.frequencyToPitchClass(bin.frequency);
-
+    // Map frequencies to pitch classes using static cache (O(1) lookup, bypasses range checks & Math.log2)
+    for (let i = 0; i < len; i++) {
+      const pitchClass = pitchClassMap[i];
       if (pitchClass !== -1) {
-        chromagram[pitchClass] += magnitude;
+        chromagram[pitchClass] += linearMagnitudes[i];
       }
     }
 
@@ -116,7 +151,8 @@ export class AdvancedKeyDetection {
 
     // Try all 12 major keys
     for (let tonic = 0; tonic < 12; tonic++) {
-      const rotatedProfile = this.rotateArray(KEY_PROFILES.major, tonic);
+      // ⚡ Bug Fix: ks profile requires a counter-clockwise rotation to match tonic in chromagram
+      const rotatedProfile = this.rotateArray(KEY_PROFILES.major, (12 - tonic) % 12);
       const correlation = this.pearsonCorrelation(chromagram, rotatedProfile);
 
       results.push({
@@ -128,7 +164,8 @@ export class AdvancedKeyDetection {
 
     // Try all 12 minor keys
     for (let tonic = 0; tonic < 12; tonic++) {
-      const rotatedProfile = this.rotateArray(KEY_PROFILES.minor, tonic);
+      // ⚡ Bug Fix: ks profile requires a counter-clockwise rotation to match tonic in chromagram
+      const rotatedProfile = this.rotateArray(KEY_PROFILES.minor, (12 - tonic) % 12);
       const correlation = this.pearsonCorrelation(chromagram, rotatedProfile);
 
       results.push({
@@ -220,6 +257,8 @@ export class AdvancedKeyDetection {
 
   /**
    * Detect chord progressions (experimental)
+   * ⚡ Bolt Optimization: Uses Float32Array.subarray() for zero-copy windowing.
+   * Eliminates the need to create new OfflineAudioContexts and AudioBuffers for each segment.
    */
   async detectChordProgression(
     audioBuffer: AudioBuffer,
@@ -229,20 +268,23 @@ export class AdvancedKeyDetection {
 
     // Analyze audio in segments
     const segments = Math.floor(audioBuffer.duration / hopSize);
+    const sampleRate = audioBuffer.sampleRate;
+    const channelData = audioBuffer.getChannelData(0);
 
     for (let i = 0; i < segments; i++) {
       const startTime = i * hopSize;
       const endTime = Math.min((i + 1) * hopSize, audioBuffer.duration);
 
       // Extract segment
-      const startSample = Math.floor(startTime * audioBuffer.sampleRate);
-      const endSample = Math.floor(endTime * audioBuffer.sampleRate);
+      const startSample = Math.floor(startTime * sampleRate);
+      const endSample = Math.floor(endTime * sampleRate);
       const length = endSample - startSample;
 
-      const segmentBuffer = this.extractSegment(audioBuffer, startSample, length);
+      // ⚡ Bolt: Zero-copy extraction of channel segment
+      const segmentData = channelData.subarray(startSample, startSample + length);
 
       // Detect key/chord for this segment
-      const keyData = await this.detectKey(segmentBuffer);
+      const keyData = await this.detectKey(segmentData, sampleRate);
 
       chords.push({
         time: startTime,
