@@ -11,15 +11,17 @@ These branches are core features, improvements, or related services for the Song
 - **Visuals**: `claude/auto-split-video-clips-gwIQz` (Automated video/visualizer generation)
 - **Optimization**: `bolt/*` (Performance-focused enhancements across all services)
 
-**Collaboration Pattern**:
-1. **Input**: Vocal/Organic capture (Voice Recorder) and MIDI/Beat generation (Beat Maker).
-2. **Generation**: Multi-model AI ensemble (Core application) generates audio based on inputs.
-3. **Refinement**: Professional finishing via `AudioMasteringService` and quality validation via `AudioAnalysisService`.
-4. **Storage**: Final assets are stored and managed in the Music Vault.
-5. **Presentation**: Visualizers are generated for the final tracks.
+### Collaborative Synergy (Core Hub Phases):
+The Song Generator Pro Hub is meticulously constructed as a synergistic collaborative ecosystem, segmented into five sequential phases to seamlessly transition a raw inspiration into a release-ready production:
+
+1. **Capture (Organic Foundations)**: raw vocals, melodic ideas, or instrumentation are captured via the **Voice Recorder** (`codex/create-advanced-voice-recorder-app`). Simultaneously, the **Beat Maker** (`claude/beat-maker-app-Fhpg2`) generates temporal structures or MIDI backbones.
+2. **Generation (The Core Engine)**: The captured organic seeds and rhythmic baselines are processed by the **Core AI Ensemble** (`main`), generating high-fidelity orchestration. During generation, real-time feedback loops utilize the **FastFFTEngine** to validate frequency bounds.
+3. **Refinement (The Production Studio)**: The raw generated tracks undergo deep spectral and temporal diagnostic inspection within the **Audio Analysis Service** (`claude/audio-analysis-mastering-tool-ySQzQ`), evaluating LUFS, Dynamic Range, and Stereo Width. High-performing mathematical identities directly feed into the **Audio Mastering Service**, which applies precise in-place mastering (EQ, compression, dynamic limiting) to elevate files to industry specifications.
+4. **Storage (Music Vault)**: Polished assets are seamlessly indexed, archived, and persistent-stored inside the **Music Vault** (`claude/music-vault-app-DNlEb`) for instant library retrieval.
+5. **Presentation (Video & Waveforms)**: Final mastered tracks are paired with responsive visual content, waveform graphics, and auto-trimmed social clips (`claude/auto-split-video-clips-gwIQz`) to facilitate community distribution.
 
 ## 📦 Relocations (Move to separate repositories)
-The following branches are unrelated to the Song Generator Pro ecosystem and should be moved to their own repos:
+The following branches are unrelated to the Song Generator Pro ecosystem and must be relocated to independent repositories to declutter the Hub:
 
 - **Social/Community**: `remotes/origin/LemmeGitDat--Modular-build-for-local-areas-to-track-through-community-whats-popping-near-them`
 - **Browser Extensions**:
