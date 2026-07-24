@@ -33,3 +33,7 @@
 ## 2026-05-05 - Spectral Analysis Redundancy and Hot Loop Indexing
 **Learning:** Even with an optimized FFT, downstream spectral analysis (Centroid, Rolloff, Flatness) can become a bottleneck if each feature performs redundant (N)$ traversals and millions of `Math.pow` calls to convert decibels to linear magnitudes. Additionally, using `Math.floor` for block indexing inside a hot (N)$ loop (millions of iterations) adds measurable CPU overhead compared to local counters.
 **Action:** Lift common mathematical transformations (like Decibel to Linear) into a pre-calculation pass before feature extraction, and use local counters for window/block indexing in high-frequency audio loops.
+
+## 2026-05-06 - Zero-Copy Polymorphic Segment Analysis
+**Learning:** Extracting audio segments for iterative sub-analysis (e.g., chord progression detection over rolling time windows) via nested loops, `OfflineAudioContext`, and temporary `AudioBuffer` objects creates extreme memory pressure, high garbage collection overhead, and slow execution. By refactoring processing methods polymorphically to accept both `AudioBuffer` and `Float32Array`, we can use `Float32Array.subarray()` to pass a zero-copy slice of the main audio channel directly to our downstream FFT/DSP components.
+**Action:** Always write analysis and DSP functions polymorphically to accept raw `Float32Array` buffers alongside full `AudioBuffer` objects, enabling high-performance, zero-allocation sliding window analysis.
