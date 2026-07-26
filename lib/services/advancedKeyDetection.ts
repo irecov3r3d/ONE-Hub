@@ -20,15 +20,20 @@ export class AdvancedKeyDetection {
 
   /**
    * Detect musical key using chromagram and template matching
+   * ⚡ Bolt Optimization: Supports polymorphic input (AudioBuffer or Float32Array)
+   * to bypass expensive wrapper or buffer creation.
    */
-  async detectKey(audioBuffer: AudioBuffer): Promise<{
+  async detectKey(
+    audioBufferOrArray: AudioBuffer | Float32Array,
+    sampleRateOverride?: number
+  ): Promise<{
     key: string;
     scale: string;
     confidence: number;
     alternatives: Array<{ key: string; confidence: number }>;
   }> {
     // Calculate chromagram (pitch class distribution)
-    const chromagram = await this.calculateChromagram(audioBuffer);
+    const chromagram = await this.calculateChromagram(audioBufferOrArray, sampleRateOverride);
 
     // Normalize chromagram
     const normalizedChroma = this.normalizeChromagram(chromagram);
@@ -55,14 +60,20 @@ export class AdvancedKeyDetection {
 
   /**
    * Calculate chromagram (12-bin pitch class histogram)
-   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes.
+   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes and polymorphic inputs.
    */
-  private async calculateChromagram(audioBuffer: AudioBuffer): Promise<number[]> {
+  private async calculateChromagram(
+    audioBufferOrArray: AudioBuffer | Float32Array,
+    sampleRateOverride?: number
+  ): Promise<number[]> {
     const chromagram = new Array(12).fill(0);
 
     // Get frequency spectrum
-    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioBuffer, 8192);
-    const sampleRate = audioBuffer.sampleRate;
+    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioBufferOrArray, 8192, sampleRateOverride);
+    const isBuffer = typeof (audioBufferOrArray as any).getChannelData === 'function';
+    const sampleRate = isBuffer
+      ? (audioBufferOrArray as AudioBuffer).sampleRate
+      : (sampleRateOverride || 44100);
 
     // Map frequencies to pitch classes
     for (let i = 0; i < spectrum.length; i++) {
@@ -220,29 +231,47 @@ export class AdvancedKeyDetection {
 
   /**
    * Detect chord progressions (experimental)
+   * ⚡ Bolt Optimization: Uses zero-copy `subarray` views of segments instead of heavy OfflineAudioContext
+   * and AudioBuffer allocations. Supports polymorphic input.
    */
   async detectChordProgression(
-    audioBuffer: AudioBuffer,
-    hopSize: number = 2  // seconds
+    audioBufferOrArray: AudioBuffer | Float32Array,
+    hopSize: number = 2,  // seconds
+    sampleRateOverride?: number
   ): Promise<Array<{ time: number; chord: string; confidence: number }>> {
     const chords: Array<{ time: number; chord: string; confidence: number }> = [];
 
+    const isBuffer = typeof (audioBufferOrArray as any).getChannelData === 'function';
+    const sampleRate = isBuffer
+      ? (audioBufferOrArray as AudioBuffer).sampleRate
+      : (sampleRateOverride || 44100);
+
+    const channelData = isBuffer
+      ? (audioBufferOrArray as AudioBuffer).getChannelData(0)
+      : (audioBufferOrArray as Float32Array);
+
+    const totalSamples = channelData.length;
+    const duration = totalSamples / sampleRate;
+
     // Analyze audio in segments
-    const segments = Math.floor(audioBuffer.duration / hopSize);
+    const segments = Math.floor(duration / hopSize);
 
     for (let i = 0; i < segments; i++) {
       const startTime = i * hopSize;
-      const endTime = Math.min((i + 1) * hopSize, audioBuffer.duration);
+      const endTime = Math.min((i + 1) * hopSize, duration);
 
-      // Extract segment
-      const startSample = Math.floor(startTime * audioBuffer.sampleRate);
-      const endSample = Math.floor(endTime * audioBuffer.sampleRate);
+      // Extract segment using zero-copy subarray view
+      const startSample = Math.floor(startTime * sampleRate);
+      const endSample = Math.floor(endTime * sampleRate);
       const length = endSample - startSample;
 
-      const segmentBuffer = this.extractSegment(audioBuffer, startSample, length);
+      const segmentView = channelData.subarray(
+        Math.max(0, startSample),
+        Math.min(totalSamples, startSample + length)
+      );
 
-      // Detect key/chord for this segment
-      const keyData = await this.detectKey(segmentBuffer);
+      // Detect key/chord for this segment directly using the subarray view
+      const keyData = await this.detectKey(segmentView, sampleRate);
 
       chords.push({
         time: startTime,
@@ -256,6 +285,7 @@ export class AdvancedKeyDetection {
 
   /**
    * Extract audio segment
+   * @deprecated ⚡ Use zero-copy Float32Array.subarray() instead.
    */
   private extractSegment(
     audioBuffer: AudioBuffer,
