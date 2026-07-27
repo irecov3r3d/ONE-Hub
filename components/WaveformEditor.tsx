@@ -122,7 +122,25 @@ export default function WaveformEditor({ audioUrl, onSave }: WaveformEditorProps
     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.fillRect(0, 0, width, height);
 
-    // Draw waveform bars
+    // ⚡ Bolt Performance Optimization: Waveform Batch Canvas Drawing
+    // By grouping bar drawing operations into color-specific Path2D paths,
+    // we reduce Canvas context `fillStyle` state changes and `fill()` draw calls
+    // from O(N) (1000 individual operations) to O(1) per color group (4 operations).
+    // This is crucial for keeping playback buttery-smooth at 60fps on low-end CPUs/GPUs.
+    const colors = {
+      trimmed: 'rgba(139, 92, 246, 0.2)', // Dimmed (trimmed region)
+      played: '#ec4899',                    // Pink (played region)
+      selected: '#10b981',                  // Green (selected region)
+      default: '#8b5cf6',                   // Default purple
+    };
+
+    const paths: Record<string, Path2D> = {
+      [colors.trimmed]: new Path2D(),
+      [colors.played]: new Path2D(),
+      [colors.selected]: new Path2D(),
+      [colors.default]: new Path2D(),
+    };
+
     waveformData.forEach((value, index) => {
       const barHeight = value * height * 0.8;
       const x = index * barWidth;
@@ -130,22 +148,27 @@ export default function WaveformEditor({ audioUrl, onSave }: WaveformEditorProps
 
       const progress = (index / waveformData.length) * duration;
 
-      // Color based on state
-      let color = '#8b5cf6'; // Default purple
+      // Determine state color
+      let color = colors.default;
 
       if (progress < trimStart || progress > trimEnd) {
-        color = 'rgba(139, 92, 246, 0.2)'; // Dimmed (trimmed region)
+        color = colors.trimmed;
       } else if (progress <= currentTime) {
-        color = '#ec4899'; // Pink (played region)
+        color = colors.played;
       }
 
       if (selectedRegion && progress >= selectedRegion.start && progress <= selectedRegion.end) {
-        color = '#10b981'; // Green (selected region)
+        color = colors.selected;
       }
 
-      ctx.fillStyle = color;
-      ctx.fillRect(x, y, barWidth - 1, barHeight);
+      paths[color].rect(x, y, barWidth - 1, barHeight);
     });
+
+    // Execute the batched fill calls (O(1) draw calls per color)
+    for (const [colorStr, path] of Object.entries(paths)) {
+      ctx.fillStyle = colorStr;
+      ctx.fill(path);
+    }
 
     // Draw playhead
     const playheadX = (currentTime / duration) * width;

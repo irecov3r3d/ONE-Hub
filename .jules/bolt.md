@@ -1,3 +1,7 @@
+## 2026-07-27 - Batch Waveform Canvas Drawing
+**Learning:** Drawing hundreds of individual rectangles in a loop on an HTML5 Canvas using alternating `ctx.fillStyle` and `ctx.fillRect` calls on every audio update block is highly CPU/GPU bound. By grouping coordinates of matching audio states into `Path2D` objects per color group, we can render the entire waveform with just 4 `fill(path)` operations (from $O(N)$ down to $O(1)$ per color group). This is essential for maintaining a responsive 60fps UI during real-time playhead updates.
+**Action:** Always look for ways to batch/group individual draw operations when rendering audio waveforms or real-time visualizers.
+
 ## 2024-05-20 - Consolidated Audio Analysis Pipeline
 **Learning:** The previous audio analysis pipeline performed multiple O(N) traversals for mono conversion, peak detection, DC offset, and RMS calculation. By consolidating these into a single-pass loop in `analyzeBasicStats`, we reduce CPU overhead and cache misses significantly.
 **Action:** Always look for opportunities to merge buffer traversals in audio processing services.
