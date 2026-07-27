@@ -14,17 +14,19 @@ export class FastFFTEngine {
   }
 
   /**
-   * Perform FFT analysis on an AudioBuffer.
+   * Perform FFT analysis on an AudioBuffer or a Float32Array.
    * ⚡ Bolt Optimization:
    * 1. Removed unused Web Audio API objects (OfflineAudioContext, AnalyserNode) for static buffer analysis.
    * 2. Returns linear magnitudes alongside dB spectrum to eliminate redundant downstream conversions.
+   * 3. Added polymorphic input support to allow zero-copy analysis of raw sample subarrays.
    */
   async performFFT(
-    audioBuffer: AudioBuffer,
-    fftSize: number = 8192
+    audioData: AudioBuffer | Float32Array,
+    fftSize: number = 8192,
+    sampleRateOverride?: number
   ): Promise<{ spectrum: FrequencyBand[]; linearMagnitudes: Float32Array }> {
-    const sampleRate = audioBuffer.sampleRate;
-    const channelData = audioBuffer.getChannelData(0);
+    const sampleRate = audioData instanceof Float32Array ? (sampleRateOverride || 44100) : audioData.sampleRate;
+    const channelData = audioData instanceof Float32Array ? audioData : audioData.getChannelData(0);
 
     // Use middle portion for analysis
     const startSample = Math.floor(channelData.length / 2) - Math.floor(fftSize / 2);
