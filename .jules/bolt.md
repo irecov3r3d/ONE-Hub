@@ -37,3 +37,7 @@
 ## 2026-05-06 - Zero-Copy Polymorphic Segment Analysis
 **Learning:** Extracting audio segments for iterative sub-analysis (e.g., chord progression detection over rolling time windows) via nested loops, `OfflineAudioContext`, and temporary `AudioBuffer` objects creates extreme memory pressure, high garbage collection overhead, and slow execution. By refactoring processing methods polymorphically to accept both `AudioBuffer` and `Float32Array`, we can use `Float32Array.subarray()` to pass a zero-copy slice of the main audio channel directly to our downstream FFT/DSP components.
 **Action:** Always write analysis and DSP functions polymorphically to accept raw `Float32Array` buffers alongside full `AudioBuffer` objects, enabling high-performance, zero-allocation sliding window analysis.
+
+## 2026-05-07 - Waveform Editor Canvas rendering using Path2D
+**Learning:** Rendering complex waveforms in React canvas components iteratively changes `fillStyle` and calls `fillRect` for every single sample/bar, leading to substantial canvas state-change and draw overhead (O(N) operations). By categorizing samples into state-dependent arrays (e.g. Played, Unplayed, Trimmed, Selected) and constructing separate `Path2D` objects, we can draw the entire canvas in O(1) fill calls per color group.
+**Action:** In dynamic HTML5 Canvas rendering loops, group drawing segments by state and use `Path2D` to batch render multiple shapes in a single draw call.
