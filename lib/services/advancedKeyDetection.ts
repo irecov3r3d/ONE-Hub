@@ -11,8 +11,25 @@ const KEY_PROFILES = {
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
+// ⚡ Bolt Optimization: Pre-calculate rotated key profiles to avoid array allocations in hot paths
+const ROTATED_MAJOR_PROFILES: number[][] = [];
+const ROTATED_MINOR_PROFILES: number[][] = [];
+
+for (let tonic = 0; tonic < 12; tonic++) {
+  const rotate = (arr: number[], n: number): number[] => {
+    const shift = n % arr.length;
+    return [...arr.slice(shift), ...arr.slice(0, shift)];
+  };
+  ROTATED_MAJOR_PROFILES.push(rotate(KEY_PROFILES.major, tonic));
+  ROTATED_MINOR_PROFILES.push(rotate(KEY_PROFILES.minor, tonic));
+}
+
 export class AdvancedKeyDetection {
   private fftEngine: FastFFTEngine;
+
+  // ⚡ Bolt Optimization: Cache mapping frequency bins to pitch classes
+  // Keyed by "spectrumLength_sampleRate", mapped to Int8Array of pitch class indices (0-11, or -1 if invalid)
+  private static pitchClassCache: Map<string, Int8Array> = new Map();
 
   constructor(audioContext: AudioContext) {
     this.fftEngine = new FastFFTEngine(audioContext);
@@ -59,7 +76,8 @@ export class AdvancedKeyDetection {
 
   /**
    * Calculate chromagram (12-bin pitch class histogram)
-   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes and supports raw Float32Array.
+   * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes, supports raw Float32Array,
+   * and leverages a pre-allocated static pitch class bin cache to avoid high-frequency math/log2 in the loop.
    */
   private async calculateChromagram(
     audioData: AudioBuffer | Float32Array,
@@ -71,16 +89,27 @@ export class AdvancedKeyDetection {
     const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioData, 8192, sampleRateOverride);
     const sampleRate = audioData instanceof Float32Array ? (sampleRateOverride || 44100) : audioData.sampleRate;
 
-    // Map frequencies to pitch classes
+    const cacheKey = `${spectrum.length}_${sampleRate}`;
+    let pitchClasses = AdvancedKeyDetection.pitchClassCache.get(cacheKey);
+
+    if (!pitchClasses) {
+      pitchClasses = new Int8Array(spectrum.length);
+      for (let i = 0; i < spectrum.length; i++) {
+        const bin = spectrum[i];
+        if (bin.frequency < 80 || bin.frequency > 5000) {
+          pitchClasses[i] = -1;
+        } else {
+          pitchClasses[i] = this.frequencyToPitchClass(bin.frequency);
+        }
+      }
+      AdvancedKeyDetection.pitchClassCache.set(cacheKey, pitchClasses);
+    }
+
+    // Map magnitudes to chromagram bins using zero-allocation pre-calculated mapping
     for (let i = 0; i < spectrum.length; i++) {
-      const bin = spectrum[i];
-      if (bin.frequency < 80 || bin.frequency > 5000) continue;
-
-      const magnitude = linearMagnitudes[i];
-      const pitchClass = this.frequencyToPitchClass(bin.frequency);
-
+      const pitchClass = pitchClasses[i];
       if (pitchClass !== -1) {
-        chromagram[pitchClass] += magnitude;
+        chromagram[pitchClass] += linearMagnitudes[i];
       }
     }
 
@@ -113,6 +142,7 @@ export class AdvancedKeyDetection {
 
   /**
    * Correlate chromagram with all 24 key profiles
+   * ⚡ Bolt Optimization: Uses pre-calculated, non-allocating rotated profiles instead of calling slice/rotateArray.
    */
   private correlateWithKeyProfiles(chromagram: number[]): Array<{
     key: string;
@@ -123,7 +153,7 @@ export class AdvancedKeyDetection {
 
     // Try all 12 major keys
     for (let tonic = 0; tonic < 12; tonic++) {
-      const rotatedProfile = this.rotateArray(KEY_PROFILES.major, tonic);
+      const rotatedProfile = ROTATED_MAJOR_PROFILES[tonic];
       const correlation = this.pearsonCorrelation(chromagram, rotatedProfile);
 
       results.push({
@@ -135,7 +165,7 @@ export class AdvancedKeyDetection {
 
     // Try all 12 minor keys
     for (let tonic = 0; tonic < 12; tonic++) {
-      const rotatedProfile = this.rotateArray(KEY_PROFILES.minor, tonic);
+      const rotatedProfile = ROTATED_MINOR_PROFILES[tonic];
       const correlation = this.pearsonCorrelation(chromagram, rotatedProfile);
 
       results.push({
@@ -188,6 +218,7 @@ export class AdvancedKeyDetection {
 
   /**
    * Rotate array (for transposition)
+   * @deprecated - Replaced by pre-calculated ROTATED_MAJOR_PROFILES and ROTATED_MINOR_PROFILES
    */
   private rotateArray(arr: number[], n: number): number[] {
     n = n % arr.length;
