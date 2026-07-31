@@ -37,3 +37,7 @@
 ## 2026-05-06 - Zero-Copy Polymorphic Segment Analysis
 **Learning:** Extracting audio segments for iterative sub-analysis (e.g., chord progression detection over rolling time windows) via nested loops, `OfflineAudioContext`, and temporary `AudioBuffer` objects creates extreme memory pressure, high garbage collection overhead, and slow execution. By refactoring processing methods polymorphically to accept both `AudioBuffer` and `Float32Array`, we can use `Float32Array.subarray()` to pass a zero-copy slice of the main audio channel directly to our downstream FFT/DSP components.
 **Action:** Always write analysis and DSP functions polymorphically to accept raw `Float32Array` buffers alongside full `AudioBuffer` objects, enabling high-performance, zero-allocation sliding window analysis.
+
+## 2026-05-07 - Pitch Class Map and Static Rotations Caching
+**Learning:** In musical key detection, calculating pitch classes for frequency bins inside a hot loop is highly CPU-intensive and mathematically redundant because the bin frequencies are constant for a given `fftSize` and `sampleRate`. By caching the mapping in an `Int8Array` and pre-rotating Krumhansl-Schmuckler profiles at the module level, we eliminate both `Math.log2` computations and 24 slice/spread array allocations per call, yielding a measurable speedup.
+**Action:** Cache static mathematical lookup tables keyed on pipeline parameters (like FFT size or sample rate) to completely bypass log/power math operations and GC allocations in hot audio processing loops.
