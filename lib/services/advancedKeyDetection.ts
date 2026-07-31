@@ -11,11 +11,56 @@ const KEY_PROFILES = {
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
+// ⚡ Bolt Optimization: Pre-calculated major and minor key profiles rotated for each of the 12 tonics.
+// Completely eliminates 24 redundant array allocations and slicing operations on every key correlation pass.
+const ROTATED_MAJOR_PROFILES: number[][] = [];
+const ROTATED_MINOR_PROFILES: number[][] = [];
+
+function rotateArray(arr: number[], n: number): number[] {
+  const len = arr.length;
+  n = n % len;
+  return [...arr.slice(n), ...arr.slice(0, n)];
+}
+
+// Pre-populate key profiles
+for (let tonic = 0; tonic < 12; tonic++) {
+  ROTATED_MAJOR_PROFILES.push(rotateArray(KEY_PROFILES.major, tonic));
+  ROTATED_MINOR_PROFILES.push(rotateArray(KEY_PROFILES.minor, tonic));
+}
+
 export class AdvancedKeyDetection {
   private fftEngine: FastFFTEngine;
+  // ⚡ Bolt Optimization: Static cache mapping (fftSize_sampleRate) -> Int8Array of pitch classes.
+  // This bypasses expensive Math.log2 and boundary checks inside the hot FFT chromagram loop.
+  private static pitchClassCache: Map<string, Int8Array> = new Map();
 
   constructor(audioContext: AudioContext) {
     this.fftEngine = new FastFFTEngine(audioContext);
+  }
+
+  /**
+   * Get pre-calculated pitch class map (index -> pitchClass) for given fftSize and sampleRate.
+   * Maps out-of-bounds frequencies (< 80 Hz or > 5000 Hz) to -1.
+   * ⚡ Bolt Optimization: Caches mapping to bypass Math.log2 and bounds checking in hot loops.
+   */
+  private getPitchClassMap(fftSize: number, sampleRate: number): Int8Array {
+    const key = `${fftSize}_${sampleRate}`;
+    let map = AdvancedKeyDetection.pitchClassCache.get(key);
+    if (!map) {
+      const len = fftSize / 2;
+      map = new Int8Array(len);
+      const binFreqFactor = sampleRate / fftSize;
+      for (let i = 0; i < len; i++) {
+        const freq = i * binFreqFactor;
+        if (freq < 80 || freq > 5000) {
+          map[i] = -1;
+        } else {
+          map[i] = this.frequencyToPitchClass(freq);
+        }
+      }
+      AdvancedKeyDetection.pitchClassCache.set(key, map);
+    }
+    return map;
   }
 
   /**
@@ -60,6 +105,7 @@ export class AdvancedKeyDetection {
   /**
    * Calculate chromagram (12-bin pitch class histogram)
    * ⚡ Bolt Optimization: Uses pre-calculated linear magnitudes and supports raw Float32Array.
+   * ⚡ Bolt Optimization v2: Bypasses Math.log2 and bounds checking with static pitchClassCache.
    */
   private async calculateChromagram(
     audioData: AudioBuffer | Float32Array,
@@ -68,19 +114,19 @@ export class AdvancedKeyDetection {
     const chromagram = new Array(12).fill(0);
 
     // Get frequency spectrum
-    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioData, 8192, sampleRateOverride);
+    const fftSize = 8192;
+    const { spectrum, linearMagnitudes } = await this.fftEngine.performFFT(audioData, fftSize, sampleRateOverride);
     const sampleRate = audioData instanceof Float32Array ? (sampleRateOverride || 44100) : audioData.sampleRate;
 
-    // Map frequencies to pitch classes
-    for (let i = 0; i < spectrum.length; i++) {
-      const bin = spectrum[i];
-      if (bin.frequency < 80 || bin.frequency > 5000) continue;
+    const pitchClassMap = this.getPitchClassMap(fftSize, sampleRate);
 
-      const magnitude = linearMagnitudes[i];
-      const pitchClass = this.frequencyToPitchClass(bin.frequency);
+    // Map frequencies to pitch classes
+    const limit = Math.min(spectrum.length, pitchClassMap.length);
+    for (let i = 0; i < limit; i++) {
+      const pitchClass = pitchClassMap[i];
 
       if (pitchClass !== -1) {
-        chromagram[pitchClass] += magnitude;
+        chromagram[pitchClass] += linearMagnitudes[i];
       }
     }
 
@@ -113,6 +159,7 @@ export class AdvancedKeyDetection {
 
   /**
    * Correlate chromagram with all 24 key profiles
+   * ⚡ Bolt Optimization: Uses pre-calculated/rotated profiles to eliminate array allocations in loop.
    */
   private correlateWithKeyProfiles(chromagram: number[]): Array<{
     key: string;
@@ -123,7 +170,7 @@ export class AdvancedKeyDetection {
 
     // Try all 12 major keys
     for (let tonic = 0; tonic < 12; tonic++) {
-      const rotatedProfile = this.rotateArray(KEY_PROFILES.major, tonic);
+      const rotatedProfile = ROTATED_MAJOR_PROFILES[tonic];
       const correlation = this.pearsonCorrelation(chromagram, rotatedProfile);
 
       results.push({
@@ -135,7 +182,7 @@ export class AdvancedKeyDetection {
 
     // Try all 12 minor keys
     for (let tonic = 0; tonic < 12; tonic++) {
-      const rotatedProfile = this.rotateArray(KEY_PROFILES.minor, tonic);
+      const rotatedProfile = ROTATED_MINOR_PROFILES[tonic];
       const correlation = this.pearsonCorrelation(chromagram, rotatedProfile);
 
       results.push({
@@ -184,14 +231,6 @@ export class AdvancedKeyDetection {
 
     const denominator = Math.sqrt(denomX * denomY);
     return denominator === 0 ? 0 : numerator / denominator;
-  }
-
-  /**
-   * Rotate array (for transposition)
-   */
-  private rotateArray(arr: number[], n: number): number[] {
-    n = n % arr.length;
-    return [...arr.slice(n), ...arr.slice(0, n)];
   }
 
   /**
