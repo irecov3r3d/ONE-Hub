@@ -118,19 +118,26 @@ export class LyricsService {
 
   /**
    * Generate rhyme scheme analysis
+   *
+   * Bolt Optimization: Precomputes and caches the last words of all lines.
+   * This reduces extraction operations from O(N^2) to O(N), eliminating
+   * redundant string trim, lowercase, split, and regex allocations in the nested loop.
    */
   static analyzeRhymeScheme(lyrics: string): string {
     const lines = lyrics.split('\n').filter(l => l.trim());
     const rhymeScheme: string[] = [];
     let currentLetter = 'A';
 
+    // Precompute last words to avoid O(N^2) extraction cost
+    const lastWords = lines.map(line => this.getLastWord(line));
+
     // Simplified rhyme detection
     for (let i = 0; i < lines.length; i++) {
-      const lastWord = this.getLastWord(lines[i]);
+      const lastWord = lastWords[i];
       let foundRhyme = false;
 
       for (let j = 0; j < i; j++) {
-        const prevLastWord = this.getLastWord(lines[j]);
+        const prevLastWord = lastWords[j];
         if (this.doWordsRhyme(lastWord, prevLastWord)) {
           rhymeScheme.push(rhymeScheme[j]);
           foundRhyme = true;
@@ -163,6 +170,9 @@ export class LyricsService {
 
   // Helper methods
 
+  /**
+   * Extract the last word of a line, removing any punctuation.
+   */
   private static getLastWord(line: string): string {
     const words = line.trim().toLowerCase().replace(/[.,!?;:]/, '').split(' ');
     return words[words.length - 1] || '';
