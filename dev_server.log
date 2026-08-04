@@ -1,0 +1,14 @@
+
+> song-generator@0.1.0 dev /app
+> next dev
+
+   ▲ Next.js 15.5.12
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.0.2:3000
+
+ ✓ Starting...
+ ✓ Ready in 1979ms
+ ○ Compiling / ...
+ ✓ Compiled / in 9.2s (593 modules)
+ ✓ Compiled in 1312ms (256 modules)
+ GET / 200 in 10537ms
