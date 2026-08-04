@@ -1,6 +1,6 @@
 # ⚡ Final Branch Audit Report: Song Generator Pro Hub
 
-This report categorizes the existing branches into those that belong to the **Song Generator Pro Hub** and those that should be relocated to their own repositories.
+This report categorizes the existing branches into those that belong to the **Song Generator Pro Hub** and those that should be relocated to their own repositories. It also defines the synergistic workflow that enables professional AI-driven music production.
 
 ## 🎵 Song Generator Pro Hub (Keep)
 These branches are essential to the mission of creating an integrated AI-driven music production ecosystem.
@@ -46,14 +46,23 @@ These branches are essential to the mission of creating an integrated AI-driven 
 - `codex/organize-file-folders-neatly`
 - `monorepo-extraction-script-fix-*`
 
-## 🤝 Hub Synergy & Workflow
-The Song Generator Pro Hub operates as an integrated ecosystem where specialized services collaborate to take a musical idea from inception to presentation:
+---
 
-1.  **Capture**: Organic ideas are captured via the **Voice Recorder** or rhythmic foundations are laid in the **Beat Maker**.
-2.  **Generation**: The **Core AI Ensemble** (main) uses these inputs to generate multi-instrumental compositions.
-3.  **Refinement**: Tracks are validated for quality by the **Audio Analysis Service** and polished using professional-grade tools in the **Audio Mastering Service**.
-4.  **Storage**: Finalized assets are archived and managed within the **Music Vault** for easy retrieval.
-5.  **Presentation**: The **Auto Video Splitter** generates synchronized visual content for social media and distribution.
+## 🤝 Hub Synergy & Functional Workflow
+The Song Generator Pro Hub is designed as a synergistic pipeline where specialized services collaborate to take a musical idea from inception to distribution.
+
+### The Pipeline
+1.  **Capture Phase**: Organic musical ideas are captured via the **Voice Memo Recorder** (Organic Capture) or rhythmic foundations are laid in the **Beat Maker** (Rhythmic Foundation).
+2.  **Generation Phase**: The **Core AI Ensemble** (Generation) uses these inputs as "seeds" or reference tracks to generate multi-instrumental, high-fidelity compositions.
+3.  **Refinement Phase**: Generated tracks are automatically analyzed by the **Audio Analysis Service** for quality metrics (spectral clarity, dynamic range, musical key). The **Audio Mastering Service** then applies professional-grade processing (EQ, Compression, Limiting) based on these analysis suggestions.
+4.  **Storage Phase**: Finalized masters and their metadata are archived and managed within the **Music Vault**, ensuring all assets are searchable and version-controlled.
+5.  **Presentation Phase**: To reach audiences, the **Visual Service** generates album art and the **Auto Video Splitter** creates synchronized visual content optimized for social media platforms.
+
+### Data Flow & Dependencies
+- **Capture -> Generation**: `VoiceMemoRecorder` exports PCM/WAV data that serves as the `referenceTrack` for the `MultiModelService`.
+- **Generation -> Refinement**: `SongGenerator` outputs raw `AudioBuffer` objects which are the direct input for `AudioAnalysisService.analyzeAudio`.
+- **Refinement -> Storage**: Optimized assets from `AudioMasteringService` are persisted to `TrackStore` via `StorageUtils`.
+- **Storage -> Presentation**: `VisualService` retrieves stored audio to generate frequency-reactive visualizers and album art based on track metadata.
 
 ---
 
