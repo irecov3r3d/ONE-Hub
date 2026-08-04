@@ -124,13 +124,16 @@ export class LyricsService {
     const rhymeScheme: string[] = [];
     let currentLetter = 'A';
 
+    // Precompute last words for all lines to avoid O(N^2) redundant parsing
+    const lastWords = lines.map(line => this.getLastWord(line));
+
     // Simplified rhyme detection
     for (let i = 0; i < lines.length; i++) {
-      const lastWord = this.getLastWord(lines[i]);
+      const lastWord = lastWords[i];
       let foundRhyme = false;
 
       for (let j = 0; j < i; j++) {
-        const prevLastWord = this.getLastWord(lines[j]);
+        const prevLastWord = lastWords[j];
         if (this.doWordsRhyme(lastWord, prevLastWord)) {
           rhymeScheme.push(rhymeScheme[j]);
           foundRhyme = true;
