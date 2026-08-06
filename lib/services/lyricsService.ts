@@ -118,28 +118,41 @@ export class LyricsService {
 
   /**
    * Generate rhyme scheme analysis
+   * ⚡ Bolt Optimization:
+   * Precomputes and caches the last word of each line to reduce complexity from O(N^2) to O(N).
+   * Eliminates redundant string trimming, lowercasing, regex replacements, and array split allocations in the nested loop.
    */
   static analyzeRhymeScheme(lyrics: string): string {
     const lines = lyrics.split('\n').filter(l => l.trim());
-    const rhymeScheme: string[] = [];
+    const n = lines.length;
+    if (n === 0) return '';
+
+    const rhymeScheme: string[] = new Array(n);
+    const lastWords = new Array<string>(n);
+
+    // Precompute last words for all lines in a single O(N) pass
+    for (let i = 0; i < n; i++) {
+      lastWords[i] = this.getLastWord(lines[i]);
+    }
+
     let currentLetter = 'A';
 
     // Simplified rhyme detection
-    for (let i = 0; i < lines.length; i++) {
-      const lastWord = this.getLastWord(lines[i]);
+    for (let i = 0; i < n; i++) {
+      const lastWord = lastWords[i];
       let foundRhyme = false;
 
       for (let j = 0; j < i; j++) {
-        const prevLastWord = this.getLastWord(lines[j]);
+        const prevLastWord = lastWords[j];
         if (this.doWordsRhyme(lastWord, prevLastWord)) {
-          rhymeScheme.push(rhymeScheme[j]);
+          rhymeScheme[i] = rhymeScheme[j];
           foundRhyme = true;
           break;
         }
       }
 
       if (!foundRhyme) {
-        rhymeScheme.push(currentLetter);
+        rhymeScheme[i] = currentLetter;
         currentLetter = String.fromCharCode(currentLetter.charCodeAt(0) + 1);
       }
     }
