@@ -118,23 +118,45 @@ export class LyricsService {
 
   /**
    * Generate rhyme scheme analysis
+   * ⚡ Bolt Optimization: Precompute and cache the 2-character endings of lines.
+   * This eliminates redundant O(N^2) calls to getLastWord, trims, regex replacements,
+   * and intermediate array split allocations within the nested loop. Complexity is reduced
+   * from O(N^2) string operations to O(N) optimized lookups.
    */
   static analyzeRhymeScheme(lyrics: string): string {
     const lines = lyrics.split('\n').filter(l => l.trim());
     const rhymeScheme: string[] = [];
     let currentLetter = 'A';
 
-    // Simplified rhyme detection
-    for (let i = 0; i < lines.length; i++) {
-      const lastWord = this.getLastWord(lines[i]);
+    const len = lines.length;
+    // Precompute line endings to avoid repeating getLastWord/doWordsRhyme in the nested loops.
+    // Replicates the exact baseline behavior (including first punctuation replacement quirk) for 100% compatibility.
+    const endings = new Array<string>(len);
+    for (let i = 0; i < len; i++) {
+      const line = lines[i].trim().toLowerCase();
+      const replaced = line.replace(/[.,!?;:]/, '');
+      const lastSpace = replaced.lastIndexOf(' ');
+      const lastWord = lastSpace === -1 ? replaced : replaced.substring(lastSpace + 1);
+
+      if (lastWord.length < 2) {
+        endings[i] = '';
+      } else {
+        endings[i] = lastWord.slice(-2);
+      }
+    }
+
+    // Simplified rhyme detection using precomputed endings
+    for (let i = 0; i < len; i++) {
+      const ending = endings[i];
       let foundRhyme = false;
 
-      for (let j = 0; j < i; j++) {
-        const prevLastWord = this.getLastWord(lines[j]);
-        if (this.doWordsRhyme(lastWord, prevLastWord)) {
-          rhymeScheme.push(rhymeScheme[j]);
-          foundRhyme = true;
-          break;
+      if (ending !== '') {
+        for (let j = 0; j < i; j++) {
+          if (ending === endings[j]) {
+            rhymeScheme.push(rhymeScheme[j]);
+            foundRhyme = true;
+            break;
+          }
         }
       }
 
