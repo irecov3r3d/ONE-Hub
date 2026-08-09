@@ -118,20 +118,43 @@ export class LyricsService {
 
   /**
    * Generate rhyme scheme analysis
+   * ⚡ Bolt Optimization:
+   * Precomputes and caches line endings to eliminate redundant O(N^2) getLastWord / parsing operations.
+   * Leverages a highly optimized loop with minimum allocations while maintaining 100% bug-compatible behavior.
    */
   static analyzeRhymeScheme(lyrics: string): string {
     const lines = lyrics.split('\n').filter(l => l.trim());
+    const n = lines.length;
+    if (n === 0) return '';
+
     const rhymeScheme: string[] = [];
     let currentLetter = 'A';
 
-    // Simplified rhyme detection
-    for (let i = 0; i < lines.length; i++) {
-      const lastWord = this.getLastWord(lines[i]);
+    // Precompute 2-char endings and the last words to prevent O(N^2) redundant processing & allocations.
+    // We replicate the exact bug-compatible punctuation behavior (replacing only the first punctuation mark in the line).
+    const lastWords = new Array<string>(n);
+    const endings = new Array<string>(n);
+
+    for (let i = 0; i < n; i++) {
+      const word = this.getLastWord(lines[i]);
+      lastWords[i] = word;
+      endings[i] = word.length >= 2 ? word.slice(-2) : '';
+    }
+
+    for (let i = 0; i < n; i++) {
+      const lastWord = lastWords[i];
+      const ending1 = endings[i];
+      const len1 = lastWord.length;
       let foundRhyme = false;
 
       for (let j = 0; j < i; j++) {
-        const prevLastWord = this.getLastWord(lines[j]);
-        if (this.doWordsRhyme(lastWord, prevLastWord)) {
+        const prevLastWord = lastWords[j];
+        const ending2 = endings[j];
+        const len2 = prevLastWord.length;
+
+        // Inlined doWordsRhyme check to avoid function call overhead
+        const minLength = len1 < len2 ? len1 : len2;
+        if (minLength >= 2 && ending1 === ending2) {
           rhymeScheme.push(rhymeScheme[j]);
           foundRhyme = true;
           break;
