@@ -118,28 +118,37 @@ export class LyricsService {
 
   /**
    * Generate rhyme scheme analysis
+   * Optimized to O(N) by using a hash map for rhyme group matching,
+   * avoiding the O(N^2) nested loop and redundant word parsing.
    */
   static analyzeRhymeScheme(lyrics: string): string {
     const lines = lyrics.split('\n').filter(l => l.trim());
     const rhymeScheme: string[] = [];
     let currentLetter = 'A';
 
-    // Simplified rhyme detection
+    // Map from the 2-character ending to the assigned rhyme letter
+    const endingToLetter = new Map<string, string>();
+
     for (let i = 0; i < lines.length; i++) {
       const lastWord = this.getLastWord(lines[i]);
-      let foundRhyme = false;
+      const wordLength = lastWord.length;
 
-      for (let j = 0; j < i; j++) {
-        const prevLastWord = this.getLastWord(lines[j]);
-        if (this.doWordsRhyme(lastWord, prevLastWord)) {
-          rhymeScheme.push(rhymeScheme[j]);
-          foundRhyme = true;
-          break;
-        }
+      // According to doWordsRhyme, words of length < 2 can never rhyme
+      if (wordLength < 2) {
+        // Assign a unique new letter, push it, but do not cache in endingToLetter map
+        rhymeScheme.push(currentLetter);
+        currentLetter = String.fromCharCode(currentLetter.charCodeAt(0) + 1);
+        continue;
       }
 
-      if (!foundRhyme) {
+      const ending = lastWord.slice(-2);
+      const cachedLetter = endingToLetter.get(ending);
+
+      if (cachedLetter !== undefined) {
+        rhymeScheme.push(cachedLetter);
+      } else {
         rhymeScheme.push(currentLetter);
+        endingToLetter.set(ending, currentLetter);
         currentLetter = String.fromCharCode(currentLetter.charCodeAt(0) + 1);
       }
     }
