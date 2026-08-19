@@ -122,30 +122,46 @@ export default function WaveformEditor({ audioUrl, onSave }: WaveformEditorProps
     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.fillRect(0, 0, width, height);
 
-    // Draw waveform bars
-    waveformData.forEach((value, index) => {
+    // Batch draw waveform bars by grouping rects into Path2D objects per color state.
+    // Reduces O(N) canvas state switches and fill calls to O(1) per color group.
+    const playedPath = new Path2D();
+    const selectedPath = new Path2D();
+    const trimmedPath = new Path2D();
+    const unplayedPath = new Path2D();
+
+    const numBars = waveformData.length;
+    for (let i = 0; i < numBars; i++) {
+      const value = waveformData[i];
       const barHeight = value * height * 0.8;
-      const x = index * barWidth;
+      const x = i * barWidth;
       const y = (height - barHeight) / 2;
 
-      const progress = (index / waveformData.length) * duration;
+      const progress = (i / numBars) * duration;
 
-      // Color based on state
-      let color = '#8b5cf6'; // Default purple
-
-      if (progress < trimStart || progress > trimEnd) {
-        color = 'rgba(139, 92, 246, 0.2)'; // Dimmed (trimmed region)
-      } else if (progress <= currentTime) {
-        color = '#ec4899'; // Pink (played region)
-      }
-
+      // Color priority sequence: Selected > Trimmed > Played > Unplayed
       if (selectedRegion && progress >= selectedRegion.start && progress <= selectedRegion.end) {
-        color = '#10b981'; // Green (selected region)
+        selectedPath.rect(x, y, barWidth - 1, barHeight);
+      } else if (progress < trimStart || progress > trimEnd) {
+        trimmedPath.rect(x, y, barWidth - 1, barHeight);
+      } else if (progress <= currentTime) {
+        playedPath.rect(x, y, barWidth - 1, barHeight);
+      } else {
+        unplayedPath.rect(x, y, barWidth - 1, barHeight);
       }
+    }
 
-      ctx.fillStyle = color;
-      ctx.fillRect(x, y, barWidth - 1, barHeight);
-    });
+    // Fill each color group in single draw calls
+    ctx.fillStyle = '#ec4899'; // Pink (played region)
+    ctx.fill(playedPath);
+
+    ctx.fillStyle = '#10b981'; // Green (selected region)
+    ctx.fill(selectedPath);
+
+    ctx.fillStyle = 'rgba(139, 92, 246, 0.2)'; // Dimmed (trimmed region)
+    ctx.fill(trimmedPath);
+
+    ctx.fillStyle = '#8b5cf6'; // Default purple (unplayed region)
+    ctx.fill(unplayedPath);
 
     // Draw playhead
     const playheadX = (currentTime / duration) * width;
