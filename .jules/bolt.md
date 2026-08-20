@@ -41,3 +41,7 @@
 ## 2026-05-07 - Bug-Compatible Map-Based O(N) Rhyme Analysis
 **Learning:** Baseline `LyricsService.getLastWord` replaces only the first occurrence of punctuation in the line (e.g. `replace(/[.,!?;:]/, '')` without the global `/g` flag) which may leave trailing punctuation on lines with internal punctuation (e.g., "But for a second, time stood still."). In order to maintain 100% numerical correctness and match the original algorithm's quirks, the optimized single-pass Map-based rhyme analyzer must replicate this exact punctuation-handling and short-word constraints while achieving an O(N) lookup.
 **Action:** When optimizing algorithms that deal with raw user text input, preserve any internal parsing quirks exactly to maintain 100% bug compatibility, rather than fixing them and causing downstream verification or expectation mismatch.
+
+## 2026-05-08 - Cold Path String Concatenation vs Hot Path DSP
+**Learning:** Refactoring on-demand string generation (such as DAW config file formatting in `DAWExportService`) from `+=` concatenation to array accumulator (`lines.push`) is a cold path micro-optimization that yields no user-perceptible benefit. Furthermore, top-level execution of large benchmarks inside `__tests__/` causes unnecessary test runner slowdowns.
+**Action:** Always focus optimization efforts on hot audio DSP/rendering pipelines (FFT, audio buffer traversals, canvas rendering) rather than cold-path string formatting.
