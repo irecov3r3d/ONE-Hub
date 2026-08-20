@@ -6,49 +6,59 @@ import type { MasteringSettings, AudioAnalysisResult } from '@/types';
 export class DAWExportService {
   /**
    * Export for Logic Pro X (XML format)
+   * ⚡ Bolt Optimization: Accumulates lines in an array to eliminate intermediate string allocations.
    */
   exportForLogicPro(settings: MasteringSettings, analysis: AudioAnalysisResult): string {
-    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
-    xml += '<ChannelEQ version="1.0">\n';
+    const lines: string[] = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<ChannelEQ version="1.0">'
+    ];
 
     // Export EQ bands
     settings.eqBands.forEach((band, index) => {
       if (band.enabled) {
-        xml += `  <Band${index + 1}>\n`;
-        xml += `    <Frequency>${band.frequency}</Frequency>\n`;
-        xml += `    <Gain>${band.gain}</Gain>\n`;
-        xml += `    <Q>${band.q}</Q>\n`;
-        xml += `    <Type>${this.convertEQTypeToLogic(band.type)}</Type>\n`;
-        xml += `    <Enabled>true</Enabled>\n`;
-        xml += `  </Band${index + 1}>\n`;
+        lines.push(
+          `  <Band${index + 1}>`,
+          `    <Frequency>${band.frequency}</Frequency>`,
+          `    <Gain>${band.gain}</Gain>`,
+          `    <Q>${band.q}</Q>`,
+          `    <Type>${this.convertEQTypeToLogic(band.type)}</Type>`,
+          `    <Enabled>true</Enabled>`,
+          `  </Band${index + 1}>`
+        );
       }
     });
 
-    xml += '</ChannelEQ>\n\n';
+    lines.push('</ChannelEQ>', '');
 
     // Compressor settings
     if (settings.compression.length > 0) {
       const comp = settings.compression[0];
-      xml += '<Compressor version="1.0">\n';
-      xml += `  <Threshold>${comp.threshold}</Threshold>\n`;
-      xml += `  <Ratio>${comp.ratio}</Ratio>\n`;
-      xml += `  <Attack>${comp.attack}</Attack>\n`;
-      xml += `  <Release>${comp.release}</Release>\n`;
-      xml += `  <Knee>${comp.knee}</Knee>\n`;
-      xml += `  <MakeupGain>${comp.makeupGain}</MakeupGain>\n`;
-      xml += '</Compressor>\n\n';
+      lines.push(
+        '<Compressor version="1.0">',
+        `  <Threshold>${comp.threshold}</Threshold>`,
+        `  <Ratio>${comp.ratio}</Ratio>`,
+        `  <Attack>${comp.attack}</Attack>`,
+        `  <Release>${comp.release}</Release>`,
+        `  <Knee>${comp.knee}</Knee>`,
+        `  <MakeupGain>${comp.makeupGain}</MakeupGain>`,
+        '</Compressor>',
+        ''
+      );
     }
 
     // Limiter settings
     if (settings.limiting.enabled) {
-      xml += '<AdaptiveLimiter version="1.0">\n';
-      xml += `  <OutputLevel>${settings.limiting.ceiling}</OutputLevel>\n`;
-      xml += `  <GainReduction>${settings.limiting.threshold - settings.limiting.ceiling}</GainReduction>\n`;
-      xml += `  <Release>${settings.limiting.release}</Release>\n`;
-      xml += '</AdaptiveLimiter>\n';
+      lines.push(
+        '<AdaptiveLimiter version="1.0">',
+        `  <OutputLevel>${settings.limiting.ceiling}</OutputLevel>`,
+        `  <GainReduction>${settings.limiting.threshold - settings.limiting.ceiling}</GainReduction>`,
+        `  <Release>${settings.limiting.release}</Release>`,
+        '</AdaptiveLimiter>'
+      );
     }
 
-    return xml;
+    return lines.join('\n') + '\n';
   }
 
   /**
@@ -107,66 +117,79 @@ export class DAWExportService {
 
   /**
    * Export for Pro Tools (TXT format with instructions)
+   * ⚡ Bolt Optimization: Uses array accumulator to eliminate string re-allocation overhead.
    */
   exportForProTools(settings: MasteringSettings, analysis: AudioAnalysisResult): string {
-    let instructions = '=== PRO TOOLS MASTERING SETTINGS ===\n\n';
+    const lines: string[] = [
+      '=== PRO TOOLS MASTERING SETTINGS ===',
+      '',
+      `File: ${analysis.fileInfo.fileName}`,
+      `Target LUFS: ${settings.targetLUFS}`,
+      `True Peak Limit: ${settings.truePeakLimit} dBTP`,
+      '',
+      '--- CHANNEL STRIP (7-BAND EQ3) ---'
+    ];
 
-    instructions += `File: ${analysis.fileInfo.fileName}\n`;
-    instructions += `Target LUFS: ${settings.targetLUFS}\n`;
-    instructions += `True Peak Limit: ${settings.truePeakLimit} dBTP\n\n`;
-
-    // Channel Strip Setup
-    instructions += '--- CHANNEL STRIP (7-BAND EQ3) ---\n';
     settings.eqBands.forEach((band, index) => {
       if (band.enabled) {
-        instructions += `Band ${index + 1}: ${band.frequency} Hz, ${band.gain > 0 ? '+' : ''}${band.gain} dB, Q=${band.q}, Type=${band.type}\n`;
+        lines.push(`Band ${index + 1}: ${band.frequency} Hz, ${band.gain > 0 ? '+' : ''}${band.gain} dB, Q=${band.q}, Type=${band.type}`);
       }
     });
-    instructions += '\n';
+    lines.push('');
 
     // Dynamics
     if (settings.compression.length > 0) {
       const comp = settings.compression[0];
-      instructions += '--- DYNAMICS III (Compressor/Limiter) ---\n';
-      instructions += 'Compressor Section:\n';
-      instructions += `  Threshold: ${comp.threshold} dB\n`;
-      instructions += `  Ratio: ${comp.ratio}:1\n`;
-      instructions += `  Attack: ${comp.attack} ms\n`;
-      instructions += `  Release: ${comp.release} ms\n`;
-      instructions += `  Knee: ${comp.knee} dB\n`;
-      instructions += `  Make-up Gain: ${comp.makeupGain} dB\n\n`;
+      lines.push(
+        '--- DYNAMICS III (Compressor/Limiter) ---',
+        'Compressor Section:',
+        `  Threshold: ${comp.threshold} dB`,
+        `  Ratio: ${comp.ratio}:1`,
+        `  Attack: ${comp.attack} ms`,
+        `  Release: ${comp.release} ms`,
+        `  Knee: ${comp.knee} dB`,
+        `  Make-up Gain: ${comp.makeupGain} dB`,
+        ''
+      );
     }
 
     if (settings.limiting.enabled) {
-      instructions += 'Limiter Section (Maxim/L2):\n';
-      instructions += `  Threshold: ${settings.limiting.threshold} dB\n`;
-      instructions += `  Ceiling: ${settings.limiting.ceiling} dBFS\n`;
-      instructions += `  Release: ${settings.limiting.release} ms\n\n`;
+      lines.push(
+        'Limiter Section (Maxim/L2):',
+        `  Threshold: ${settings.limiting.threshold} dB`,
+        `  Ceiling: ${settings.limiting.ceiling} dBFS`,
+        `  Release: ${settings.limiting.release} ms`,
+        ''
+      );
     }
 
     // Mid/Side Processing
     if (settings.midSideProcessing.enabled) {
-      instructions += '--- MID/SIDE PROCESSING (Center) ---\n';
-      instructions += `  Mid Gain: ${settings.midSideProcessing.midGain} dB\n`;
-      instructions += `  Side Gain: ${settings.midSideProcessing.sideGain} dB\n`;
-      instructions += `  Stereo Width: ${settings.midSideProcessing.stereoWidth}%\n\n`;
+      lines.push(
+        '--- MID/SIDE PROCESSING (Center) ---',
+        `  Mid Gain: ${settings.midSideProcessing.midGain} dB`,
+        `  Side Gain: ${settings.midSideProcessing.sideGain} dB`,
+        `  Stereo Width: ${settings.midSideProcessing.stereoWidth}%`,
+        ''
+      );
     }
 
     // Metering
-    instructions += '--- METERING (Insight 2) ---\n';
-    instructions += `  Target: ${settings.targetLUFS} LUFS\n`;
-    instructions += `  True Peak Limit: ${settings.truePeakLimit} dBTP\n`;
-    instructions += `  Current LUFS: ${analysis.loudness.integratedLUFS.toFixed(1)}\n`;
-    instructions += `  Current True Peak: ${analysis.loudness.truePeakMax.toFixed(1)} dBTP\n\n`;
+    lines.push(
+      '--- METERING (Insight 2) ---',
+      `  Target: ${settings.targetLUFS} LUFS`,
+      `  True Peak Limit: ${settings.truePeakLimit} dBTP`,
+      `  Current LUFS: ${analysis.loudness.integratedLUFS.toFixed(1)}`,
+      `  Current True Peak: ${analysis.loudness.truePeakMax.toFixed(1)} dBTP`,
+      '',
+      '--- CURRENT ANALYSIS ---',
+      `  Integrated LUFS: ${analysis.loudness.integratedLUFS.toFixed(1)}`,
+      `  Dynamic Range: ${analysis.loudness.dynamicRange.toFixed(1)} dB`,
+      `  BPM: ${analysis.temporal.bpm}`,
+      `  Key: ${analysis.musical.key}`
+    );
 
-    // Analysis Data
-    instructions += '--- CURRENT ANALYSIS ---\n';
-    instructions += `  Integrated LUFS: ${analysis.loudness.integratedLUFS.toFixed(1)}\n`;
-    instructions += `  Dynamic Range: ${analysis.loudness.dynamicRange.toFixed(1)} dB\n`;
-    instructions += `  BPM: ${analysis.temporal.bpm}\n`;
-    instructions += `  Key: ${analysis.musical.key}\n`;
-
-    return instructions;
+    return lines.join('\n') + '\n';
   }
 
   /**
@@ -224,54 +247,63 @@ export class DAWExportService {
 
   /**
    * Export universal CSV format (works with any DAW)
+   * ⚡ Bolt Optimization: Uses array accumulator to avoid O(N) string re-allocations during CSV generation.
    */
   exportUniversalCSV(settings: MasteringSettings, analysis: AudioAnalysisResult): string {
-    let csv = 'Parameter,Value,Unit,Notes\n';
+    const lines: string[] = [
+      'Parameter,Value,Unit,Notes',
+      `Target LUFS,${settings.targetLUFS},LUFS,`,
+      `True Peak Limit,${settings.truePeakLimit},dBTP,`,
+      '',
+      'EQ Band,Frequency (Hz),Gain (dB),Q,Type,Enabled'
+    ];
 
-    // Target Settings
-    csv += `Target LUFS,${settings.targetLUFS},LUFS,\n`;
-    csv += `True Peak Limit,${settings.truePeakLimit},dBTP,\n\n`;
-
-    // EQ Settings
-    csv += 'EQ Band,Frequency (Hz),Gain (dB),Q,Type,Enabled\n';
     settings.eqBands.forEach((band, i) => {
-      csv += `Band ${i + 1},${band.frequency},${band.gain},${band.q},${band.type},${band.enabled}\n`;
+      lines.push(`Band ${i + 1},${band.frequency},${band.gain},${band.q},${band.type},${band.enabled}`);
     });
-    csv += '\n';
+    lines.push('');
 
     // Compression
     if (settings.compression.length > 0) {
-      csv += 'Compression Parameter,Value,Unit\n';
       const comp = settings.compression[0];
-      csv += `Threshold,${comp.threshold},dB\n`;
-      csv += `Ratio,${comp.ratio},:1\n`;
-      csv += `Attack,${comp.attack},ms\n`;
-      csv += `Release,${comp.release},ms\n`;
-      csv += `Knee,${comp.knee},dB\n`;
-      csv += `Makeup Gain,${comp.makeupGain},dB\n`;
-      csv += '\n';
+      lines.push(
+        'Compression Parameter,Value,Unit',
+        `Threshold,${comp.threshold},dB`,
+        `Ratio,${comp.ratio},:1`,
+        `Attack,${comp.attack},ms`,
+        `Release,${comp.release},ms`,
+        `Knee,${comp.knee},dB`,
+        `Makeup Gain,${comp.makeupGain},dB`,
+        ''
+      );
     }
 
     // Limiting
     if (settings.limiting.enabled) {
-      csv += 'Limiter Parameter,Value,Unit\n';
-      csv += `Threshold,${settings.limiting.threshold},dB\n`;
-      csv += `Ceiling,${settings.limiting.ceiling},dB\n`;
-      csv += `Release,${settings.limiting.release},ms\n`;
-      csv += `Lookahead,${settings.limiting.lookahead},ms\n`;
-      csv += '\n';
+      lines.push(
+        'Limiter Parameter,Value,Unit',
+        `Threshold,${settings.limiting.threshold},dB`,
+        `Ceiling,${settings.limiting.ceiling},dB`,
+        `Release,${settings.limiting.release},ms`,
+        `Lookahead,${settings.limiting.lookahead},ms`,
+        ''
+      );
     }
 
     // Stereo
-    csv += 'Stereo Parameter,Value,Unit\n';
-    csv += `Stereo Width,${settings.stereoWidth},%\n`;
+    lines.push(
+      'Stereo Parameter,Value,Unit',
+      `Stereo Width,${settings.stereoWidth},%`
+    );
 
     if (settings.midSideProcessing.enabled) {
-      csv += `Mid Gain,${settings.midSideProcessing.midGain},dB\n`;
-      csv += `Side Gain,${settings.midSideProcessing.sideGain},dB\n`;
+      lines.push(
+        `Mid Gain,${settings.midSideProcessing.midGain},dB`,
+        `Side Gain,${settings.midSideProcessing.sideGain},dB`
+      );
     }
 
-    return csv;
+    return lines.join('\n') + '\n';
   }
 
   /**
