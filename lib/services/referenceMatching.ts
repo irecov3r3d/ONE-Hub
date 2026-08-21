@@ -66,6 +66,17 @@ export interface MasteringAction {
   priority: 'critical' | 'high' | 'medium' | 'low';
 }
 
+// ⚡ Bolt: Hoist static frequency band definitions to avoid re-allocation on every comparison
+const FREQUENCY_BANDS = [
+  { key: 'subBass', name: 'Sub Bass (20-60 Hz)' },
+  { key: 'bass', name: 'Bass (60-250 Hz)' },
+  { key: 'lowMids', name: 'Low Mids (250-500 Hz)' },
+  { key: 'mids', name: 'Mids (500-2k Hz)' },
+  { key: 'highMids', name: 'High Mids (2-4k Hz)' },
+  { key: 'presence', name: 'Presence (4-6k Hz)' },
+  { key: 'brilliance', name: 'Brilliance (6-20k Hz)' },
+] as const;
+
 export class ReferenceMatchingService {
   /**
    * Compare target track against reference and generate matching recommendations
@@ -83,8 +94,8 @@ export class ReferenceMatchingService {
     // Create action plan
     const actionPlan = this.createActionPlan(differences);
 
-    // Calculate overall similarity
-    const overallSimilarity = this.calculateSimilarity(targetAnalysis, referenceAnalysis);
+    // Calculate overall similarity (⚡ Bolt: reuse precomputed differences)
+    const overallSimilarity = this.calculateSimilarity(targetAnalysis, referenceAnalysis, differences);
 
     return {
       targetAnalysis,
@@ -155,17 +166,7 @@ export class ReferenceMatchingService {
     target: AudioAnalysisResult,
     reference: AudioAnalysisResult
   ): FrequencyDifference[] {
-    const bands = [
-      { key: 'subBass', name: 'Sub Bass (20-60 Hz)' },
-      { key: 'bass', name: 'Bass (60-250 Hz)' },
-      { key: 'lowMids', name: 'Low Mids (250-500 Hz)' },
-      { key: 'mids', name: 'Mids (500-2k Hz)' },
-      { key: 'highMids', name: 'High Mids (2-4k Hz)' },
-      { key: 'presence', name: 'Presence (4-6k Hz)' },
-      { key: 'brilliance', name: 'Brilliance (6-20k Hz)' },
-    ];
-
-    return bands.map(band => {
+    return FREQUENCY_BANDS.map(band => {
       const targetBand = target.frequency[band.key as keyof typeof target.frequency];
       const refBand = reference.frequency[band.key as keyof typeof reference.frequency];
 
@@ -434,28 +435,37 @@ export class ReferenceMatchingService {
 
   /**
    * Calculate overall similarity (0-100%)
+   * ⚡ Bolt Optimization: Accepts optional precomputed TrackDifferences to avoid duplicate
+   * compareFrequency passes and redundant metric re-evaluations.
    */
   private calculateSimilarity(
     target: AudioAnalysisResult,
-    reference: AudioAnalysisResult
+    reference: AudioAnalysisResult,
+    differences?: TrackDifferences
   ): number {
     let similarity = 100;
 
     // Loudness difference (30% weight)
-    const lufsDiff = Math.abs(target.loudness.integratedLUFS - reference.loudness.integratedLUFS);
+    const lufsDiff = differences
+      ? Math.abs(differences.loudness.lufsDiff)
+      : Math.abs(target.loudness.integratedLUFS - reference.loudness.integratedLUFS);
     similarity -= Math.min(30, lufsDiff * 3);
 
     // Frequency balance (40% weight)
-    const freqDiff = this.compareFrequency(target, reference);
+    const freqDiff = differences ? differences.frequency : this.compareFrequency(target, reference);
     const avgFreqDiff = freqDiff.reduce((sum, diff) => sum + Math.abs(diff.difference), 0) / freqDiff.length;
     similarity -= Math.min(40, avgFreqDiff * 2);
 
     // Stereo width (15% weight)
-    const stereoWidthDiff = Math.abs(target.stereo.stereoWidth - reference.stereo.stereoWidth);
+    const stereoWidthDiff = differences
+      ? Math.abs(differences.stereo.widthDiff)
+      : Math.abs(target.stereo.stereoWidth - reference.stereo.stereoWidth);
     similarity -= Math.min(15, stereoWidthDiff * 0.3);
 
     // Dynamic range (15% weight)
-    const drDiff = Math.abs(target.loudness.dynamicRange - reference.loudness.dynamicRange);
+    const drDiff = differences
+      ? Math.abs(differences.loudness.dynamicRangeDiff)
+      : Math.abs(target.loudness.dynamicRange - reference.loudness.dynamicRange);
     similarity -= Math.min(15, drDiff * 1.5);
 
     return Math.max(0, Math.min(100, similarity));
