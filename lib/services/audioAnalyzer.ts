@@ -20,10 +20,14 @@ export class AudioAnalyzer {
       // ⚡ Bolt: Single-pass stats collection
       const stats = this.analyzeBasicStats(audioBuffer);
 
-      // Calculate various metrics using pre-calculated stats
-      const spectralClarity = await this.calculateSpectralClarity(stats.mono, audioBuffer.sampleRate);
+      // ⚡ Bolt: Precompute FFT magnitudes once to share between Spectral Clarity & Frequency Balance
+      const fftSize = 2048;
+      const frequencyBins = this.performFFT(stats.mono, fftSize, audioBuffer.sampleRate);
+
+      // Calculate various metrics using pre-calculated stats & shared FFT magnitudes
+      const spectralClarity = this.calculateSpectralClarityFromBins(frequencyBins, audioBuffer.sampleRate);
       const dynamicRange = this.calculateDynamicRangeFromRMS(stats.windowRMS);
-      const frequencyBalance = this.calculateFrequencyBalance(stats.mono, audioBuffer.sampleRate);
+      const frequencyBalance = this.calculateFrequencyBalanceFromBins(frequencyBins, audioBuffer.sampleRate);
       const coherence = this.calculateCoherenceFromRMS(stats.windowRMS);
 
       // Calculate overall score
@@ -81,12 +85,10 @@ export class AudioAnalyzer {
   }
 
   /**
-   * Calculate spectral clarity (high frequency content quality)
+   * Calculate spectral clarity (high frequency content quality) from precalculated FFT magnitude bins
    */
-  private static async calculateSpectralClarity(mono: Float32Array, sampleRate: number): Promise<number> {
-    // Perform FFT analysis on a segment from the middle of the track
-    const fftSize = 2048;
-    const frequencyBins = this.performFFT(mono, fftSize, sampleRate);
+  public static calculateSpectralClarityFromBins(frequencyBins: Float32Array, sampleRate: number): number {
+    const fftSize = frequencyBins.length * 2;
 
     // Analyze high frequency content (4kHz - 20kHz)
     const hfStart = Math.floor((4000 / sampleRate) * fftSize);
@@ -112,6 +114,15 @@ export class AudioAnalyzer {
   }
 
   /**
+   * Calculate spectral clarity (high frequency content quality)
+   */
+  private static async calculateSpectralClarity(mono: Float32Array, sampleRate: number): Promise<number> {
+    const fftSize = 2048;
+    const frequencyBins = this.performFFT(mono, fftSize, sampleRate);
+    return this.calculateSpectralClarityFromBins(frequencyBins, sampleRate);
+  }
+
+  /**
    * Calculate dynamic range from pre-calculated windowed RMS values
    */
   private static calculateDynamicRangeFromRMS(rmsValues: number[]): number {
@@ -130,12 +141,10 @@ export class AudioAnalyzer {
   }
 
   /**
-   * Calculate frequency balance (how balanced the spectrum is)
+   * Calculate frequency balance from precalculated FFT magnitude bins
    */
-  private static calculateFrequencyBalance(mono: Float32Array, sampleRate: number): number {
-    const fftSize = 2048;
-
-    const frequencyBins = this.performFFT(mono, fftSize, sampleRate);
+  public static calculateFrequencyBalanceFromBins(frequencyBins: Float32Array, sampleRate: number): number {
+    const fftSize = frequencyBins.length * 2;
 
     // Divide spectrum into 3 bands: bass, mids, highs
     const bassEnd = Math.floor((250 / sampleRate) * fftSize);
@@ -175,6 +184,15 @@ export class AudioAnalyzer {
     const balance = 1 - Math.min(1, avgDeviation * 3);
 
     return balance;
+  }
+
+  /**
+   * Calculate frequency balance (how balanced the spectrum is)
+   */
+  private static calculateFrequencyBalance(mono: Float32Array, sampleRate: number): number {
+    const fftSize = 2048;
+    const frequencyBins = this.performFFT(mono, fftSize, sampleRate);
+    return this.calculateFrequencyBalanceFromBins(frequencyBins, sampleRate);
   }
 
   /**
