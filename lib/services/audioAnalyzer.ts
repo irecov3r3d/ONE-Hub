@@ -20,10 +20,13 @@ export class AudioAnalyzer {
       // ⚡ Bolt: Single-pass stats collection
       const stats = this.analyzeBasicStats(audioBuffer);
 
-      // Calculate various metrics using pre-calculated stats
-      const spectralClarity = await this.calculateSpectralClarity(stats.mono, audioBuffer.sampleRate);
+      // ⚡ Bolt: Consolidate 2048-point FFT computation for spectral clarity and frequency balance
+      const frequencyBins = this.performFFT(stats.mono, 2048, audioBuffer.sampleRate);
+
+      // Calculate various metrics using pre-calculated stats & precomputed FFT magnitudes
+      const spectralClarity = this.calculateSpectralClarity(frequencyBins, audioBuffer.sampleRate);
       const dynamicRange = this.calculateDynamicRangeFromRMS(stats.windowRMS);
-      const frequencyBalance = this.calculateFrequencyBalance(stats.mono, audioBuffer.sampleRate);
+      const frequencyBalance = this.calculateFrequencyBalance(frequencyBins, audioBuffer.sampleRate);
       const coherence = this.calculateCoherenceFromRMS(stats.windowRMS);
 
       // Calculate overall score
@@ -82,11 +85,10 @@ export class AudioAnalyzer {
 
   /**
    * Calculate spectral clarity (high frequency content quality)
+   * ⚡ Bolt Optimization: Consumes pre-calculated FFT frequency bins to eliminate redundant FFTs.
    */
-  private static async calculateSpectralClarity(mono: Float32Array, sampleRate: number): Promise<number> {
-    // Perform FFT analysis on a segment from the middle of the track
-    const fftSize = 2048;
-    const frequencyBins = this.performFFT(mono, fftSize, sampleRate);
+  private static calculateSpectralClarity(frequencyBins: Float32Array, sampleRate: number): number {
+    const fftSize = frequencyBins.length * 2;
 
     // Analyze high frequency content (4kHz - 20kHz)
     const hfStart = Math.floor((4000 / sampleRate) * fftSize);
@@ -131,11 +133,10 @@ export class AudioAnalyzer {
 
   /**
    * Calculate frequency balance (how balanced the spectrum is)
+   * ⚡ Bolt Optimization: Consumes pre-calculated FFT frequency bins to eliminate redundant FFTs.
    */
-  private static calculateFrequencyBalance(mono: Float32Array, sampleRate: number): number {
-    const fftSize = 2048;
-
-    const frequencyBins = this.performFFT(mono, fftSize, sampleRate);
+  private static calculateFrequencyBalance(frequencyBins: Float32Array, sampleRate: number): number {
+    const fftSize = frequencyBins.length * 2;
 
     // Divide spectrum into 3 bands: bass, mids, highs
     const bassEnd = Math.floor((250 / sampleRate) * fftSize);
