@@ -2,6 +2,9 @@
 
 import type { LyricsData, LyricSection } from '@/types';
 
+// Static regex for section header detection and section type extraction
+const SECTION_MARKER_REGEX = /^\[?(verse|chorus|bridge|pre-chorus|outro|intro)/i;
+
 export class LyricsService {
   /**
    * Generate lyrics using AI
@@ -38,44 +41,43 @@ export class LyricsService {
   /**
    * Parse lyrics into sections
    * Automatically detects verse, chorus, bridge, etc.
+   * ⚡ Bolt Optimization: Uses static section regex and array accumulation to avoid
+   * O(L) regex allocations per line and O(L^2) intermediate string concatenations.
    */
   static parseLyrics(text: string): LyricSection[] {
     const sections: LyricSection[] = [];
     const lines = text.split('\n');
 
-    let currentSection: LyricSection | null = null;
+    let currentType: LyricSection['type'] | null = null;
+    let currentLines: string[] = [];
 
-    for (const line of lines) {
-      const trimmed = line.trim();
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
+      if (!trimmed) continue;
 
-      // Detect section markers
-      if (trimmed.match(/^\[?(verse|chorus|bridge|pre-chorus|outro|intro)/i)) {
-        if (currentSection) {
-          sections.push(currentSection);
+      const match = SECTION_MARKER_REGEX.exec(trimmed);
+      if (match !== null) {
+        if (currentType !== null && currentLines.length > 0) {
+          sections.push({
+            type: currentType,
+            text: currentLines.join('\n'),
+          });
+          currentLines = [];
         }
-
-        const type = trimmed
-          .toLowerCase()
-          .replace(/[\[\]]/g, '')
-          .split(' ')[0] as LyricSection['type'];
-
-        currentSection = {
-          type: type || 'verse',
-          text: '',
-        };
-      } else if (trimmed && currentSection) {
-        currentSection.text += (currentSection.text ? '\n' : '') + trimmed;
-      } else if (trimmed && !currentSection) {
-        // Default to verse if no section marker
-        currentSection = {
-          type: 'verse',
-          text: trimmed,
-        };
+        currentType = (match[1].toLowerCase() as LyricSection['type']) || 'verse';
+      } else {
+        if (currentType === null) {
+          currentType = 'verse';
+        }
+        currentLines.push(trimmed);
       }
     }
 
-    if (currentSection) {
-      sections.push(currentSection);
+    if (currentType !== null && currentLines.length > 0) {
+      sections.push({
+        type: currentType,
+        text: currentLines.join('\n'),
+      });
     }
 
     return sections;
