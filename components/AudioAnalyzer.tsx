@@ -254,7 +254,7 @@ export default function AudioAnalyzer() {
 }
 
 // Overview Tab
-function OverviewTab({ analysis }: { analysis: AudioAnalysisResult }) {
+const OverviewTab = React.memo(function OverviewTab({ analysis }: { analysis: AudioAnalysisResult }) {
   return (
     <div className="space-y-6">
       <Section title="File Information">
@@ -303,10 +303,10 @@ function OverviewTab({ analysis }: { analysis: AudioAnalysisResult }) {
       )}
     </div>
   );
-}
+});
 
 // Temporal Tab
-function TemporalTab({ analysis }: { analysis: AudioAnalysisResult }) {
+const TemporalTab = React.memo(function TemporalTab({ analysis }: { analysis: AudioAnalysisResult }) {
   return (
     <div className="space-y-6">
       <Section title="Tempo Analysis">
@@ -342,10 +342,10 @@ function TemporalTab({ analysis }: { analysis: AudioAnalysisResult }) {
       </Section>
     </div>
   );
-}
+});
 
 // Frequency Tab
-function FrequencyTab({ analysis }: { analysis: AudioAnalysisResult }) {
+const FrequencyTab = React.memo(function FrequencyTab({ analysis }: { analysis: AudioAnalysisResult }) {
   const totalPercentage =
     analysis.frequency.subBass.percentage +
     analysis.frequency.bass.percentage +
@@ -393,10 +393,10 @@ function FrequencyTab({ analysis }: { analysis: AudioAnalysisResult }) {
       </Section>
     </div>
   );
-}
+});
 
 // Loudness Tab
-function LoudnessTab({ analysis }: { analysis: AudioAnalysisResult }) {
+const LoudnessTab = React.memo(function LoudnessTab({ analysis }: { analysis: AudioAnalysisResult }) {
   return (
     <div className="space-y-6">
       <Section title="Integrated Loudness (EBU R128)">
@@ -430,10 +430,10 @@ function LoudnessTab({ analysis }: { analysis: AudioAnalysisResult }) {
       </Section>
     </div>
   );
-}
+});
 
 // Musical Tab
-function MusicalTab({ analysis }: { analysis: AudioAnalysisResult }) {
+const MusicalTab = React.memo(function MusicalTab({ analysis }: { analysis: AudioAnalysisResult }) {
   return (
     <div className="space-y-6">
       <Section title="Key & Scale">
@@ -469,10 +469,10 @@ function MusicalTab({ analysis }: { analysis: AudioAnalysisResult }) {
       </Section>
     </div>
   );
-}
+});
 
 // Stereo Tab
-function StereoTab({ analysis }: { analysis: AudioAnalysisResult }) {
+const StereoTab = React.memo(function StereoTab({ analysis }: { analysis: AudioAnalysisResult }) {
   return (
     <div className="space-y-6">
       <Section title="Stereo Field">
@@ -500,10 +500,10 @@ function StereoTab({ analysis }: { analysis: AudioAnalysisResult }) {
       </Section>
     </div>
   );
-}
+});
 
 // Harmonic Tab
-function HarmonicTab({ analysis }: { analysis: AudioAnalysisResult }) {
+const HarmonicTab = React.memo(function HarmonicTab({ analysis }: { analysis: AudioAnalysisResult }) {
   return (
     <div className="space-y-6">
       <Section title="Harmonic Analysis">
@@ -530,10 +530,10 @@ function HarmonicTab({ analysis }: { analysis: AudioAnalysisResult }) {
       </Section>
     </div>
   );
-}
+});
 
 // Quality Tab
-function QualityTab({ analysis }: { analysis: AudioAnalysisResult }) {
+const QualityTab = React.memo(function QualityTab({ analysis }: { analysis: AudioAnalysisResult }) {
   return (
     <div className="space-y-6">
       <Section title="Quality Metrics">
@@ -593,10 +593,10 @@ function QualityTab({ analysis }: { analysis: AudioAnalysisResult }) {
       )}
     </div>
   );
-}
+});
 
 // Mastering Tab
-function MasteringTab({ analysis }: { analysis: AudioAnalysisResult }) {
+const MasteringTab = React.memo(function MasteringTab({ analysis }: { analysis: AudioAnalysisResult }) {
   if (!analysis.masteringSuggestions) {
     return <div className="text-gray-600">No mastering suggestions available.</div>;
   }
@@ -682,7 +682,7 @@ function MasteringTab({ analysis }: { analysis: AudioAnalysisResult }) {
       )}
     </div>
   );
-}
+});
 
 // Helper Components
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -698,7 +698,7 @@ function DataGrid({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-2 gap-4">{children}</div>;
 }
 
-function DataItem({
+const DataItem = React.memo(function DataItem({
   label,
   value,
   highlight = false,
@@ -713,9 +713,9 @@ function DataItem({
       <div className={`font-medium ${highlight ? 'text-blue-900' : 'text-gray-900'}`}>{value}</div>
     </div>
   );
-}
+});
 
-function FrequencyBandBar({
+const FrequencyBandBar = React.memo(function FrequencyBandBar({
   label,
   percentage,
   color,
@@ -735,4 +735,4 @@ function FrequencyBandBar({
       </div>
     </div>
   );
-}
+});
