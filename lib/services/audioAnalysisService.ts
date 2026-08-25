@@ -657,6 +657,8 @@ export class AudioAnalysisService {
 
   /**
    * Calculate spectral flux.
+   * ⚡ Bolt Optimization: Uses representative sampling capped at 300 frames evenly spaced
+   * across the track to reduce execution time from O(N) full traversal to O(1) bounded calculation.
    */
   private calculateSpectralFlux(
     samples: Float32Array,
@@ -664,10 +666,18 @@ export class AudioAnalysisService {
     sampleRate: number
   ): number {
     const hopSize = fftSize / 2;
+    const maxFrames = 300;
+    const totalPossibleFrames = Math.floor((samples.length - fftSize - hopSize) / hopSize);
+
+    if (totalPossibleFrames <= 0) return 0;
+
+    const frameStep = Math.max(1, Math.floor(totalPossibleFrames / maxFrames));
+    const sampleStep = frameStep * hopSize;
+
     let totalFlux = 0;
     let frameCount = 0;
 
-    for (let i = 0; i < samples.length - fftSize - hopSize; i += hopSize) {
+    for (let i = 0; i < samples.length - fftSize - hopSize; i += sampleStep) {
       let flux = 0;
       for (let j = 0; j < fftSize; j++) {
         const diff = samples[i + hopSize + j] - samples[i + j];
