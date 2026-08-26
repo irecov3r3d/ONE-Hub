@@ -66,6 +66,17 @@ export interface MasteringAction {
   priority: 'critical' | 'high' | 'medium' | 'low';
 }
 
+// Hoisted static frequency band definitions to prevent redundant object allocations during track analysis
+const FREQUENCY_BANDS = [
+  { key: 'subBass', name: 'Sub Bass (20-60 Hz)' },
+  { key: 'bass', name: 'Bass (60-250 Hz)' },
+  { key: 'lowMids', name: 'Low Mids (250-500 Hz)' },
+  { key: 'mids', name: 'Mids (500-2k Hz)' },
+  { key: 'highMids', name: 'High Mids (2-4k Hz)' },
+  { key: 'presence', name: 'Presence (4-6k Hz)' },
+  { key: 'brilliance', name: 'Brilliance (6-20k Hz)' },
+] as const;
+
 export class ReferenceMatchingService {
   /**
    * Compare target track against reference and generate matching recommendations
@@ -83,8 +94,8 @@ export class ReferenceMatchingService {
     // Create action plan
     const actionPlan = this.createActionPlan(differences);
 
-    // Calculate overall similarity
-    const overallSimilarity = this.calculateSimilarity(targetAnalysis, referenceAnalysis);
+    // Calculate overall similarity (passing pre-computed frequency differences to avoid redundant computation)
+    const overallSimilarity = this.calculateSimilarity(targetAnalysis, referenceAnalysis, differences.frequency);
 
     return {
       targetAnalysis,
@@ -155,17 +166,7 @@ export class ReferenceMatchingService {
     target: AudioAnalysisResult,
     reference: AudioAnalysisResult
   ): FrequencyDifference[] {
-    const bands = [
-      { key: 'subBass', name: 'Sub Bass (20-60 Hz)' },
-      { key: 'bass', name: 'Bass (60-250 Hz)' },
-      { key: 'lowMids', name: 'Low Mids (250-500 Hz)' },
-      { key: 'mids', name: 'Mids (500-2k Hz)' },
-      { key: 'highMids', name: 'High Mids (2-4k Hz)' },
-      { key: 'presence', name: 'Presence (4-6k Hz)' },
-      { key: 'brilliance', name: 'Brilliance (6-20k Hz)' },
-    ];
-
-    return bands.map(band => {
+    return FREQUENCY_BANDS.map(band => {
       const targetBand = target.frequency[band.key as keyof typeof target.frequency];
       const refBand = reference.frequency[band.key as keyof typeof reference.frequency];
 
@@ -437,7 +438,8 @@ export class ReferenceMatchingService {
    */
   private calculateSimilarity(
     target: AudioAnalysisResult,
-    reference: AudioAnalysisResult
+    reference: AudioAnalysisResult,
+    precomputedFreqDiff?: FrequencyDifference[]
   ): number {
     let similarity = 100;
 
@@ -445,8 +447,8 @@ export class ReferenceMatchingService {
     const lufsDiff = Math.abs(target.loudness.integratedLUFS - reference.loudness.integratedLUFS);
     similarity -= Math.min(30, lufsDiff * 3);
 
-    // Frequency balance (40% weight)
-    const freqDiff = this.compareFrequency(target, reference);
+    // Frequency balance (40% weight) - reuse pre-computed differences if available to avoid redundant analysis pass
+    const freqDiff = precomputedFreqDiff || this.compareFrequency(target, reference);
     const avgFreqDiff = freqDiff.reduce((sum, diff) => sum + Math.abs(diff.difference), 0) / freqDiff.length;
     similarity -= Math.min(40, avgFreqDiff * 2);
 
