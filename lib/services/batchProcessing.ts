@@ -175,42 +175,25 @@ export class BatchProcessingService {
 
   /**
    * Export batch results as CSV
+   * ⚡ Bolt Optimization: Single-pass string line accumulation.
+   * Eliminates creation of intermediate 2D arrays (`string[][]`), inner element array allocations,
+   * and double-iteration (`rows.map().join()`), reducing memory overhead and improving CSV generation speed.
    */
   exportBatchResultsCSV(jobId: string): string {
     const job = this.activeJobs.get(jobId);
     if (!job) throw new Error('Job not found');
 
-    const headers = [
-      'File Name',
-      'Duration (s)',
-      'BPM',
-      'Key',
-      'LUFS',
-      'True Peak (dBTP)',
-      'Dynamic Range (dB)',
-      'Quality Score',
-      'Stereo Width (%)',
-      'Issues',
+    const lines: string[] = [
+      'File Name,Duration (s),BPM,Key,LUFS,True Peak (dBTP),Dynamic Range (dB),Quality Score,Stereo Width (%),Issues',
     ];
 
-    const rows: string[][] = [headers];
-
     job.results.forEach((result, fileName) => {
-      rows.push([
-        fileName,
-        result.fileInfo.duration.toFixed(2),
-        result.temporal.bpm.toString(),
-        result.musical.key,
-        result.loudness.integratedLUFS.toFixed(1),
-        result.loudness.truePeakMax.toFixed(1),
-        result.loudness.dynamicRange.toFixed(1),
-        result.quality.qualityScore.toString(),
-        result.stereo.stereoWidth.toFixed(0),
-        result.quality.issues.length.toString(),
-      ]);
+      lines.push(
+        `${fileName},${result.fileInfo.duration.toFixed(2)},${result.temporal.bpm},${result.musical.key},${result.loudness.integratedLUFS.toFixed(1)},${result.loudness.truePeakMax.toFixed(1)},${result.loudness.dynamicRange.toFixed(1)},${result.quality.qualityScore},${result.stereo.stereoWidth.toFixed(0)},${result.quality.issues.length}`
+      );
     });
 
-    return rows.map(row => row.join(',')).join('\n');
+    return lines.join('\n');
   }
 
   /**
