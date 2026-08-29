@@ -11,6 +11,17 @@ import type {
 } from '@/lib/config/aiModels';
 import { selectModels, DEFAULT_CONFIG } from '@/lib/config/aiModels';
 
+// Pre-computed static prompt enhancement strings to avoid redundant allocations and .join calls during generation
+const QUALITY_DESCRIPTORS_STR = 'high quality, professional production, studio recording, clear mix';
+
+const GENRE_TERMS_JOINED: Record<string, string> = {
+  'Pop': 'catchy, radio-ready, polished',
+  'Rock': 'driving, powerful, energetic',
+  'Electronic': 'crisp, detailed, modern',
+  'Jazz': 'sophisticated, smooth, refined',
+  'Hip Hop': 'punchy, dynamic, hard-hitting',
+};
+
 export class MultiModelService {
   /**
    * Generate music using ensemble approach
@@ -290,6 +301,7 @@ export class MultiModelService {
 
   /**
    * Enhance prompt for better generation
+   * Optimized by Bolt: Hoisted static quality descriptors and pre-joined genre terms to module scope.
    */
   private static enhancePrompt(params: {
     prompt: string;
@@ -297,30 +309,10 @@ export class MultiModelService {
     mood: string;
   }): string {
     // Add genre and mood context
-    let enhanced = params.prompt;
+    const enhanced = params.prompt;
+    const termsStr = GENRE_TERMS_JOINED[params.genre] || '';
 
-    // Add professional production descriptors
-    const qualityDescriptors = [
-      'high quality',
-      'professional production',
-      'studio recording',
-      'clear mix',
-    ];
-
-    // Add genre-specific terms
-    const genreTerms: Record<string, string[]> = {
-      'Pop': ['catchy', 'radio-ready', 'polished'],
-      'Rock': ['driving', 'powerful', 'energetic'],
-      'Electronic': ['crisp', 'detailed', 'modern'],
-      'Jazz': ['sophisticated', 'smooth', 'refined'],
-      'Hip Hop': ['punchy', 'dynamic', 'hard-hitting'],
-    };
-
-    const terms = genreTerms[params.genre] || [];
-
-    enhanced = `${params.genre} music, ${params.mood.toLowerCase()} mood. ${enhanced}. ${qualityDescriptors.join(', ')}. ${terms.join(', ')}.`;
-
-    return enhanced;
+    return `${params.genre} music, ${params.mood.toLowerCase()} mood. ${enhanced}. ${QUALITY_DESCRIPTORS_STR}. ${termsStr}.`;
   }
 
   /**
